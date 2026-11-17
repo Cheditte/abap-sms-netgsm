@@ -3521,21 +3521,6 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
     lv_body = is_http-body.
     CONDENSE lv_body.
 
-    IF is_http-status <> 200.
-      lv_status = is_http-status.
-      CONDENSE lv_status.
-      lv_text = lcl_text=>get( iv_key = 'HTTP'
-                               iv_1   = lv_status
-                               iv_2   = is_http-reason ).
-      IF lv_body IS NOT INITIAL.
-        CONCATENATE lv_text ` ` lv_body INTO lv_text.
-      ENDIF.
-      RAISE EXCEPTION TYPE lcx_sms
-        EXPORTING
-          code = lif_sms=>code-http
-          text = lv_text.
-    ENDIF.
-
     IF lv_body IS NOT INITIAL AND lv_body(1) = `{`.
       et_values = lcl_sms_json=>parse( lv_body ).
       ev_code = lcl_sms_json=>value_of( it_values = et_values
@@ -3554,6 +3539,24 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
     ELSEIF lv_body CO '0123456789 '.
       " Older answers are plain text: the code, maybe a job ID
       SPLIT lv_body AT ` ` INTO ev_code ev_description.
+    ENDIF.
+
+    " Netgsm also answers with HTTP 406 and a normal code in the
+    " body (seen live: 406 with code 00 and 406 with code 30), so
+    " the code in the body wins over the HTTP status
+    IF ev_code IS INITIAL AND is_http-status <> 200.
+      lv_status = is_http-status.
+      CONDENSE lv_status.
+      lv_text = lcl_text=>get( iv_key = 'HTTP'
+                               iv_1   = lv_status
+                               iv_2   = is_http-reason ).
+      IF lv_body IS NOT INITIAL.
+        CONCATENATE lv_text ` ` lv_body INTO lv_text.
+      ENDIF.
+      RAISE EXCEPTION TYPE lcx_sms
+        EXPORTING
+          code = lif_sms=>code-http
+          text = lv_text.
     ENDIF.
 
     IF ev_code IS INITIAL.
@@ -6523,6 +6526,12 @@ CLASS ltc_send IMPLEMENTATION.
                                     exp = lif_sms=>code-http
                                     msg = 'HTTP status' ).
     assert_contains( iv_text = ls_result-message iv_part = `406` ).
+    " A code in the body wins over the HTTP status
+    mo_backend->reply = `{"code":"30","description":"x"}`.
+    ls_result = send( ).
+    cl_aunit_assert=>assert_equals( act = ls_result-code
+                                    exp = `30`
+                                    msg = '406 with a code' ).
   ENDMETHOD.
 
 
