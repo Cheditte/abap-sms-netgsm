@@ -1,30 +1,26 @@
-# abap-sms-netgsm
+# SAP’den Netgsm ile SMS
 
-[Türkçe](README.md) · [English](README.en.md)
+[Türkçe](README.md) · [English](README.en.md) · [Ekran görüntülü kurulum ve kullanım rehberi](WALKTHROUGH.tr.md)
 
-![SAP’den Netgsm üzerinden telefona SMS gönderen abap-sms-netgsm programı](docs/img/abap-sms-netgsm-cover.jpg)
+![abap-sms-netgsm kapağında SAP sunucusundan telefona giden SMS](docs/img/abap-sms-netgsm-cover.jpg)
 
-SAP’de bir belge hazır olduğunda ilgili kişiye SMS ile haber verebilirsiniz. `ZCHE_SMS_NETGSM` programında alıcıları ve metni girersiniz. Önizleme kaç alıcının geçerli olduğunu ve mesajın kaç SMS parçası tutacağını gösterir.
+Bir belge hazır olduğunda ya da bir arka plan işi bittiğinde SAP’den SMS ile haber verebilirsiniz. `ZCHE_SMS_NETGSM` ile mesajı SAP’de hazırlayıp Netgsm üzerinden gönderirsiniz. İlk denemede **Yalnızca önizleme** seçeneğini açık bırakın. Böylece alıcıları, mesajın kaç parçaya bölüneceğini ve tahmini SMS kredisini gönderimden önce görürsünüz.
 
-[SAP’de örnek bir SMS hazırlayın](WALKTHROUGH.tr.md#6-önce-önizleme-sonra-gönderim) · [Alıcının telefonundaki örneği görün](WALKTHROUGH.tr.md#alıcı-telefonunda-ne-görür)
+## Nereden başlamalı?
 
-## Ne yapmak istiyorsunuz?
-
-| Amaç | Nereden başlamalı? |
+| Yapmak istediğiniz | Rehber |
 |---|---|
-| Netgsm hesabını ve SAP bağlantısını hazırlamak | [Kurulum rehberi](WALKTHROUGH.tr.md) |
-| Bir kişiye, bir listeye, ileri tarihli veya şablonlu SMS hazırlamak | [Önizleme ve gönderim](WALKTHROUGH.tr.md#6-önce-önizleme-sonra-gönderim) |
-| Tek kullanımlık kod göndermek | OTP SMS paketini seçin ve tek alıcılı önizlemeyi kullanın. [Rehber](WALKTHROUGH.tr.md) |
-| Teslim durumuna, gelen SMS’lere veya bir işin istatistiğine bakmak | İlgili işlemi seçin. Tarih aralığıyla sorgularken iki tarihi de girin. [Sonuç kodları](WALKTHROUGH.tr.md#sonuç-kodları) |
-| Kendi ABAP programımdan çağırmak | [Önizleme ile PERFORM örneği](WALKTHROUGH.tr.md#kendi-programlarınızdan-kullanım) |
-| Gerçek hesapta hangi kontrollerin geçtiğini görmek | [Test sonuçları ve sınırlar](VALIDATION.tr.md) |
+| İlk kez kurmak | [Netgsm hesabı, SAP programı ve bağlantı](WALKTHROUGH.tr.md#kurulum) |
+| Hesap bilgilerini kontrol etmek | [Gönderici adlarını ücretsiz listeleme](WALKTHROUGH.tr.md#baglanti-testi) |
+| İlk SMS’i hazırlamak | [A4H ekranlarıyla önizleme ve gönderim](WALKTHROUGH.tr.md#onizleme) |
+| Tek kullanımlık kod ya da şablonlu mesaj göndermek | [OTP SMS](WALKTHROUGH.tr.md#otp) · [Şablonlu SMS](WALKTHROUGH.tr.md#sablon) |
+| Bir gönderimi takip etmek veya planlanmış gönderimi iptal etmek | [Teslim raporu ve iptal](WALKTHROUGH.tr.md#takip) |
+| Mevcut ABAP programına SMS eklemek | [Çalıştırılabilir önizleme örneği](WALKTHROUGH.tr.md#kendi-programlarınızdan-kullanım) |
 
-## İlk deneme
+## SAP’de nasıl görünür?
 
-1. **Netgsm.** Gönderici adı başvurusunu erken başlatın. Belgeler ve KEP ile iletim gerekir, onay günler sürebilir. API alt kullanıcısının şifresini ve SAP sunucusunun çıkış IP iznini hazırlayın.
-2. **SAP.** Programı SE38’de aktifleştirin. STRUST’ta sertifika zincirini, SM59’da `ZCHE_NETGSM` bağlantısını hazırlayın. Şablon işlemleri ayrıca `ZCHE_NETGSM_EXT` hedefini kullanır. [Program kaynağı](src/zche_sms_netgsm.prog.abap)
-3. **Ücretsiz kontrol.** SA38’de `ZCHE_SMS_NETGSM` → gönderici adlarını listeleme işlemini çalıştırın. `00` ve boş liste bağlantının çalıştığını gösterir. Gönderici adı onaylanana kadar gönderimler `40` ile reddedilir.
+A4H/001’de “Test belgesi hazırlandı.” metnini bir örnek numarayla önizledik. SAP bir geçerli alıcı, bir SMS parçası ve yaklaşık bir kredi hesapladı. Ekrandaki `DRY_RUN`, bu denemede SMS gönderilmediğini gösterir.
 
-## Doğrulama
+![A4H’de Türkçe SMS önizlemesi. Maskeli alıcı, gönderilecek metin ve tahmini kredi aynı ekranda.](docs/img/S11-preview.png)
 
-A4H/001’de (SAP_BASIS 816) 50 birim testi geçti. Gerçek hesapta iki HTTPS hedefine erişim, şablon listesi ve karakter sayımı doğrulandı. Test hesabında onaylı gönderici adı bulunmadığı için telefona SMS teslimi doğrulanamadı. [Test sonuçları](VALIDATION.tr.md) · [Değişiklikler](CHANGELOG.md) · [MIT lisansı](LICENSE)
+**Gerçek hesapta doğrulananlar.** SAP iki Netgsm hedefine bağlandı, şablon listesini okudu ve karakter sayımını sorguladı. Test hesabında onaylı gönderici adı olmadığı için telefona teslim açık kaldı. A4H’de kaydedilen 50 birim testinin sonuçları da doğrulama belgesinde yer alıyor. [Test sonuçları](VALIDATION.tr.md) · [Değişiklikler](CHANGELOG.md) · [MIT lisansı](LICENSE)

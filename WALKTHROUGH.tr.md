@@ -2,9 +2,13 @@
 
 [English](WALKTHROUGH.md) · [Ana sayfa](README.md) · [Test sonuçları](VALIDATION.tr.md)
 
-İlk kez kuruyorsanız önce gönderici adı başvurusunu başlatın. Onay beklerken bağlantıyı sınayabilir ve mesajınızı ücretsiz önizleyebilirsiniz.
+SAP mesajı hazırlar ve SM59’da tanımlı bağlantı üzerinden Netgsm’e iletir. Netgsm de SMS’i alıcıya gönderir. İlk kurulumda gönderici adı başvurusunu erken başlatın. Onayı beklerken bağlantıyı sınayabilir ve SAP’de ücretsiz önizleme yapabilirsiniz.
+
+[İlk kurulum](#kurulum) · [Bağlantıyı sına](#baglanti-testi) · [Örnek SMS hazırla](#onizleme) · [Gönderimi takip et](#takip)
 
 ![SAP, SM59 hedefi üzerinden Netgsm’e HTTPS isteği gönderir. Netgsm mesajı SMS olarak telefona iletir.](docs/img/netgsm-sms-flow.webp)
+
+<a id="kurulum"></a>
 
 ### 1. Netgsm hesabını hazırlayın
 
@@ -28,7 +32,7 @@ Menü adları Kasım 2026 test notlarından alınmıştır.
 3. SE38'in koyduğu her şeyi silin, yapıştırın ve **aktifleştirin** (Ctrl+F3).
 4. Kontrol: **Program → Yürüt → Birim testleri** (ADT'de Ctrl+Shift+F10). **50 testin** geçmesi gerekir. Testler sahte bir HTTP katmanı kullanır, Netgsm'i hiç çağırmaz.
 
-Bu depodaki program, Türkçe SAP oturumunda işlem ve sonuç metinlerini Türkçe gösterir. Diğer oturumlarda İngilizce gösterir. Rehberdeki Türkçe gönderim ve önizleme ekranları, A4H/001’de yerel Türkçe sürümden alınmıştır.
+Aşağıdaki SE38 görüntüsü A4H/001’deki program özelliklerini gösterir. Gönderim adımlarında Türkçe işlem adlarını kullanıyoruz. Önceki testten kalan bazı sonuç ekranları İngilizcedir.
 
 **Aktifleştirirken "satır çok uzun" hatası alırsanız:** editörünüz eski 72 karakterlik satır ayarında. *Yardımcı programlar → Ayarlar → ABAP Editor → Editör* altında **Downwards-compatible line length (72)** işaretini kaldırıp yeniden yapıştırın. Kaynak 72 sütunu aşmadığı için normalde bu olmaz.
 
@@ -72,10 +76,17 @@ SAP şifreyi kendi güvenli deposunda saklar. Program şifreyi hiç okumaz; SM59
 
 **Kim gönderebilir?** *Hedef için yetki* alanı doluysa SAP hedefi yalnızca **`S_ICF`** yetki nesnesinde `ICF_FIELD = DEST`, `ICF_VALUE = <hedef>` olan kullanıcılara açar. Program aynı kontrolü önizlemeden ve her çağrıdan önce kendisi de yapar; yetki eksikse açık bir mesaj (`NO_AUTH`) verir. `S_ICF`'i SMS gönderebilecek kişilerin ve batch kullanıcısının rolüne ekleyin. Programı kimin başlatabileceğini sınırlamak için `S_PROGRAM` ya da bir işlem kodu kullanın.
 
+<a id="baglanti-testi"></a>
+
 ### 5. İlk çalıştırma: bağlantı testi
 
-1. `ZCHE_SMS_NETGSM`'i başlatın (SA38), **Test: gönderici adlarını listele** işlemini seçip **Çalıştır**'a basın.
-2. Beklenen: `00: Netgsm cevabı: tamam.`, ardından *Netgsm bağlantısı ve girişi çalışıyor.* ve onaylı gönderici adlarınızın listesi. Ücret yoktur.
+SA38’de `ZCHE_SMS_NETGSM` programını açın. **İşlem** alanında **HEADERS – Test: gönderici adlarını listele** seçin. **SM59 hedefi** alanında standart bağlantınızın adını kontrol edip **Çalıştır** (F8) düğmesine basın. Bu sorgu ücretsizdir.
+
+![A4H’de HEADERS seçimi ve ZCHE_NETGSM bağlantı hedefi](docs/img/S10-headers.png)
+
+**Sonucu okuyun.** A4H’de Netgsm `00` döndürdü. Bu, SAP’nin bağlanıp giriş yapabildiğini gösterir. Aşağıdaki örnekte ad listesi boş. Gerçek SMS göndermek için listede hesabınıza ait onaylı bir ad görmeniz gerekir.
+
+![A4H’de bağlantı ve giriş başarılı. Netgsm yanıt kodu 00, gönderici adı listesi boş.](docs/img/S20-sender-names.png)
 
 | Cevap | Anlamı |
 |---|---|
@@ -85,35 +96,56 @@ SAP şifreyi kendi güvenli deposunda saklar. Program şifreyi hiç okumaz; SM59
 | `NO_CONN` | Bağlantı yok: ağ, proxy ya da güvenlik duvarı. |
 | `30` | Sırasıyla SAP çıkış IP iznini, API alt kullanıcısının şifresini ve alt kullanıcının onayını/API erişimini kontrol edin. |
 
-`00` ile boş liste bağlantının başarılı olduğunu gösterir. Gönderim için onaylı ad gerekir. Tanımsız gönderici adı `40` döndürür.
-
-![Gönderici adları için Türkçe işlem seçimi](docs/img/S10-headers.png)
-
-![A4H bağlantı testinde Netgsm 00 döndürdü. Test hesabının onaylı gönderici listesi boştu.](docs/img/S20-sender-names.png)
+<a id="onizleme"></a>
 
 ### 6. Önce önizleme, sonra gönderim
 
-1. **SMS gönder**'i (ya da **OTP SMS gönder**'i) seçin. Bir ya da daha fazla **cep numarası**, **gönderici adı** ve en fazla dört **metin satırı** girin; her dolu satır SMS'te bir satır olur.
-2. **Yalnızca önizleme** işaretli kalsın ve çalıştırın. Ekranda şunlar görünür:
-   - karakter seti, karakter sayısı ve parça sayısı;
-   - maskeli numaralar, reddedilen numaralar ve sebebi;
-   - Netgsm'e gidecek isteğin kendisi (numaralar maskeli).
+**Mesajı hazırlayın.** **İşlem** alanında **SEND – SMS gönder** seçin. Ekrandaki örneği denemek için aşağıdaki değerleri girin. **Yalnızca önizleme, gönderme** işaretli, **Netgsm’e de saydır** boş kalsın.
 
-   *Netgsm'e de saydır* işaretlenirse Netgsm'in kendi hesabıyla karşılaştırırsınız (ücretsiz).
-3. **Yalnızca önizleme** işaretini kaldırıp tekrar çalıştırın. Bir onay penceresi tahmini SMS kredisini gösterir. **Bu adım ücretlidir.**
-4. **İş numarasını** (jobid) not edin. Sonra **Teslim raporu**'nu seçin, iş numarasını girip çalıştırın. Netgsm'e göre raporun görünmesi birkaç dakika sürebilir.
+| SAP alanı | Önizleme için örnek değer |
+|---|---|
+| Cep numaraları | `05000000000` (örnek numara) |
+| Gönderici adı (başlık) | `FIRMA` |
+| Metin, 1. satır | Test belgesi hazırlandı. |
+| Karakter seti | AUTO |
 
-**İleri tarihli gönderim:** *Gönderim günü* ve *Gönderim saati* alanlarını doldurun (Türkiye saati, UTC+3). *Son deneme günü/saati* isteğe bağlıdır; boşsa Netgsm 21 saat boyunca dener. Vazgeçerseniz iş numarasıyla **İleri tarihli SMS'i iptal et**.
+![A4H’de SMS gönderme ekranı. Örnek alıcı, gönderici ve metin dolu, yalnızca önizleme seçili.](docs/img/S10-send.png)
 
-**Şablonlu SMS:** şablon numarasını **Şablonları listele** ile bulun. Sonra **Şablonlu SMS gönder**'i seçin, numarayı ve şablondaki her `${ad}` için bir `ad=değer` satırı girin. *Otomatik* karakter seti şablonları Türkçe olarak gönderir, çünkü program şablonun metnini göremez.
+**F8 ile önizleyin.** A4H’de `DRY_RUN` sonucu bir geçerli alıcı, sıfır reddedilen alıcı ve bir SMS parçası gösterdi. Yaklaşık maliyet bir krediydi. Numara sonuçta maskelendi. **Netgsm’e de saydır** seçeneğini ayrıca işaretlerseniz program uzunluğu karşılaştırmak için Netgsm’e ücretsiz bir sorgu gönderir.
 
-![SMS önizleme seçimi](docs/img/S10-send.png)
+![A4H önizlemesinde DRY_RUN, bir SMS parçası, maskeli numara ve gönderilecek metin](docs/img/S11-preview.png)
 
-Örnekte bir geçerli alıcı ve bir SMS parçası var. **DRY_RUN** sonucu, numarayı maskeli gösterir ve hiçbir SMS gönderilmediğini doğrular.
+**Gerçek gönderime geçtiğinizde** örnek numarayı kendi alıcınızla, `FIRMA` değerini hesabınızdaki onaylı gönderici adıyla değiştirin. Önizleme işaretini kaldırın ve F8’e basın. Onay penceresinde tahmini krediyi kontrol edin. Gönderimi onaylamak ücretli işlemi başlatır. Netgsm kabul ederse dönen **iş numarasını** teslim raporu için saklayın.
 
-![A4H’de Türkçe önizleme sonucu ve maskeli alıcı](docs/img/S11-preview.png)
+<a id="otp"></a>
 
-[OTP SMS](docs/img/S10-otp.png) · [Teslim raporu](docs/img/S10-report.png) · [İleri tarihli SMS iptali](docs/img/S10-cancel.png)
+#### Tek kullanımlık kod göndermek
+
+**OTP – OTP SMS gönder (tek numara)** işlemini seçin. OTP paketi, bir alıcı ve tek parçaya sığan bir metin gerekir. Aşağıdaki ekran giriş alanlarını gösterir. Test hesabında onaylı gönderici adı bulunmadığı için canlı OTP denemesinde `40` alındı.
+
+![A4H’de tek numaraya OTP SMS hazırlama ekranı ve seçili önizleme kutusu](docs/img/S10-otp.png)
+
+<a id="sablon"></a>
+
+#### Şablonlu SMS hazırlamak
+
+**Şablonları listele** ile numarayı bulun. **Şablonlu SMS gönder** işleminde bu numarayı ve şablondaki her `${ad}` için bir `ad=değer` satırı girin. Şablonlar ikinci SM59 hedefini kullanır. Program şablon metnini göremediği için *Otomatik* karakter setinde Türkçe seçilir.
+
+<a id="takip"></a>
+
+#### Teslimi takip etmek ve ileri tarihli gönderimi iptal etmek
+
+**Teslim raporu.** **REPORT – Teslim raporu** işleminde gönderimden aldığınız iş numarasını girin. Tarih aralığıyla arıyorsanız başlangıç ve bitiş tarihlerini birlikte doldurun. Sonucun görünmesi birkaç dakika sürebilir.
+
+![A4H’de teslim raporu için iş numarası, başlangıç ve bitiş tarihi alanları](docs/img/S10-report.png)
+
+A4H’de yalnızca bir tarih girildiğinde program `BAD_INPUT` döndürüp iki tarihi de istedi. [A4H’de görülen doğrulama mesajı](docs/img/S25-report-one-date.png)
+
+**İleri tarihli gönderim.** **SMS gönder** ekranında *Gönderim günü* ve *Gönderim saati* alanlarını Türkiye saatiyle doldurun. *Son deneme günü/saati* isteğe bağlıdır. İptal etmek isterseniz **CANCEL – İleri tarihli SMS’i iptal et** işlemini seçip planlanmış gönderimin iş numarasını girin.
+
+![A4H’de ileri tarihli gönderimi iptal etmek için Netgsm iş numarasının girildiği alan](docs/img/S10-cancel.png)
+
+Testte örnek `123` iş numarası için Netgsm `60` döndürdü. Bu kod, iptal edilecek işin bulunamadığını bildirir. [A4H’de görülen iptal sonucu](docs/img/S23-cancel-unknown-job.png)
 
 #### Alıcı telefonunda ne görür?
 
