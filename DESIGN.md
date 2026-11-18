@@ -1,6 +1,6 @@
 # Tasarım: SAP'den Netgsm ile SMS (çalışma adı `ZCHE_SMS_NETGSM`)
 
-Bu belge v0.2 için alınan tasarım kararlarını ve ilk A4H denemelerini kaydeder. Daha sonra gerçek Netgsm hesabında bağlantı, şablon listesi ve karakter sayımı doğrulandı. [Güncel test sonuçları](VALIDATION.tr.md)
+Tarih: 7 Kasım 2026, son güncelleme 18 Kasım 2026. Durum: **onaylandı; v0.2 kodlandı.** Bu belge tasarım kararlarını ve ilk A4H denemelerini kaydeder. 17 Kasım'da gerçek bir Netgsm hesabında bağlantı, giriş, sorgular ve gönderim isteği doğrulandı. Telefona teslim, hesapta onaylı gönderici adı olmadığı için doğrulanamadı. [Güncel test sonuçları](VALIDATION.tr.md)
 
 Onaylanan kararlar: REST v2, tek program + dış `PERFORM`/`SUBMIT`, standart `S_ICF` DEST yetkisi, günlükte metin varsayılan olarak yok, v0.1'de yalnızca Türkiye cep numaraları.
 
@@ -21,7 +21,7 @@ SAP'den Netgsm üzerinden SMS göndermek. Middleware gerekmez, SAP doğrudan Net
 - **Tek program**, kopyala-yapıştır kurulum, özel DDIC yok. abapGit isteğe bağlı.
 - **ABAP 7.00 klasik söz dizimi**, abaplint `v700` ile kontrol, satırlar en fazla 72 sütun.
 - **Kimlik bilgisi kodda, tabloda, varyantta yok.** Yalnızca SM59'da (3. bölüm).
-- **Ekran dili.** Bu depodaki `lcl_text`, Türkçe SAP oturumunda Türkçe, diğer oturumlarda İngilizce metin gösterir. Rehberdeki Türkçe önizleme, A4H’de denenen yerel Türkçe sürümden alınmıştır.
+- **Türkçe ve İngilizce ekran metinleri** koddan (`lcl_text` kalıbı): Türkçe SAP oturumunda Türkçe, diğer oturumlarda İngilizce. Kopyala-yapıştır kurulumda metin havuzu gelmediği için metinler kodda durur.
 - **Birim testleri gerçek SMS göndermez:** HTTP katmanı bir arayüzün arkasında, testler sahte (test double) kullanır.
 
 ## 3. Netgsm API'si: hangisi ve neden
