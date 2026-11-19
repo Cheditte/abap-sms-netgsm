@@ -2,7 +2,8 @@
 
 ## Henüz yayımlanmayanlar
 
-- OTP metni, eski varyantlarda günlük seçeneği açıkken de SAP uygulama günlüğünden ve önizleme çıktısından çıkarıldı. Netgsm hata ayrıntıları OTP içeriğini geri yansıtamaz. Standart SMS için isteğe bağlı metin kaydı sürüyor.
+- OTP metni, eski varyantlarda metin kaydı açıkken bile SAP uygulama günlüğüne, sonuç listesine ve bu listenin makara (spool) çıktısına yazılmaz. Standart SMS için isteğe bağlı metin kaydı sürüyor.
+- SAP_BASIS 7.00 için iç içe metot çağrısı bir ara değişken kullanacak şekilde düzeltildi. [`086925f`](https://github.com/Cheditte/abap-sms-netgsm/commit/086925f50fe9a4e86f0c916721c6df2b2fbb7c03)
 
 - Türkçe ve İngilizce kurulum rehberlerine A4H ekranları, temsili telefon görünümü ve gerçek Netgsm hesabıyla yapılan kontroller eklendi.
 

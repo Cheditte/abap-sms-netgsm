@@ -1,28 +1,39 @@
-# SAP’den Netgsm ile SMS
+# abap-sms-netgsm
 
-[English README](README.en.md) · [Türkçe kurulum ve kullanım rehberi](WALKTHROUGH.tr.md) · [English walkthrough](WALKTHROUGH.md)
+[English](README.md) · [Türkçe](README.tr.md)
 
-![abap-sms-netgsm kapağında SAP sunucusundan telefona giden SMS](docs/img/abap-sms-netgsm-cover.jpg)
+![abap-sms-netgsm sends a notification from SAP to a phone through Netgsm](docs/img/abap-sms-netgsm-cover.jpg)
 
-Bir belge hazır olduğunda ya da bir arka plan işi bittiğinde SAP’den SMS ile haber verebilirsiniz. `ZCHE_SMS_NETGSM` ile mesajı SAP’de hazırlayıp Netgsm üzerinden gönderirsiniz. İlk denemede **Yalnızca önizleme** seçeneğini açık bırakın. Böylece alıcıları, mesajın kaç parçaya bölüneceğini ve tahmini SMS kredisini gönderimden önce görürsünüz.
+When a document is ready in SAP, you can notify someone by SMS. Enter the recipients and message in `ZCHE_SMS_NETGSM`. The preview shows how many recipients have valid numbers and how many SMS parts the message will use.
 
-## Nereden başlamalı?
+- Copy one executable report into SE38 and activate it. No custom Data Dictionary objects are required.
+- The source targets SAP_BASIS 7.00 syntax for ECC 6.0 and fits within 72 columns per line.
+- Maintain the API user code and password in SM59. The report uses the destination and never reads the password.
 
-| Yapmak istediğiniz | Rehber |
+[English walkthrough](WALKTHROUGH.md) · [Türkçe kurulum rehberi](WALKTHROUGH.tr.md)
+
+[Prepare an example SMS in SAP](WALKTHROUGH.md#6-preview-then-send) · [See the recipient’s view](WALKTHROUGH.md#what-the-recipient-sees)
+
+## What do you want to do?
+
+| Goal | Where to start |
 |---|---|
-| İlk kez kurmak | [Netgsm hesabı, SAP programı ve bağlantı](WALKTHROUGH.tr.md#kurulum) |
-| Hesap bilgilerini kontrol etmek | [Gönderici adlarını ücretsiz listeleme](WALKTHROUGH.tr.md#baglanti-testi) |
-| İlk SMS’i hazırlamak | [A4H ekranlarıyla önizleme ve gönderim](WALKTHROUGH.tr.md#onizleme) |
-| Tek kullanımlık kod ya da şablonlu mesaj göndermek | [OTP SMS](WALKTHROUGH.tr.md#otp) · [Şablonlu SMS](WALKTHROUGH.tr.md#sablon) |
-| Bir gönderimi takip etmek veya planlanmış gönderimi iptal etmek | [Teslim raporu ve iptal](WALKTHROUGH.tr.md#takip) |
-| Gelen SMS’leri okumak veya bir gönderimin sayılarını görmek | [Gelen SMS](WALKTHROUGH.tr.md#gelen-sms) · [İş istatistikleri](WALKTHROUGH.tr.md#is-istatistikleri) |
-| Bir arka plan işinden SMS göndermek | [SM36 ile önizleme ve gönderim](WALKTHROUGH.tr.md#arka-plan) |
-| Mevcut ABAP programına SMS eklemek | [Çalıştırılabilir önizleme örneği](WALKTHROUGH.tr.md#kendi-programlarınızdan-kullanım) |
+| Prepare the Netgsm account and SAP connection | [Setup walkthrough](WALKTHROUGH.md) |
+| Prepare a message for one or more recipients, schedule it, or use a template | [Preview and send](WALKTHROUGH.md#6-preview-then-send) |
+| Send a one-time code | Choose the OTP SMS package and preview the request for one recipient. [Walkthrough](WALKTHROUGH.md) |
+| Check a delivery, read incoming SMS or view totals for a send | [Delivery report](WALKTHROUGH.md#6-preview-then-send) · [Incoming SMS](WALKTHROUGH.md#incoming-sms) · [Job statistics](WALKTHROUGH.md#job-statistics) |
+| Send from a background job | [Schedule a preview and send](WALKTHROUGH.md#background) |
+| Call the tool from my ABAP program | [PERFORM example with preview](WALKTHROUGH.md#use-it-from-your-programs) |
+| See what was tested with a real account | [Validation and limits](VALIDATION.md) |
 
-## SAP’de nasıl görünür?
+## First run
 
-A4H/001’de “Test belgesi hazırlandı.” metnini bir örnek numarayla önizledik. SAP bir geçerli alıcı, bir SMS parçası ve yaklaşık bir kredi hesapladı. Ekrandaki `DRY_RUN`, bu denemede SMS gönderilmediğini gösterir.
+1. **Netgsm.** Apply for a sender name early. The application requires documents and KEP submission, and approval can take days. Prepare the API sub-user password and allow the SAP server’s outbound IP.
+2. **SAP.** Activate the program in SE38. Configure the certificate chain in STRUST and the `ZCHE_NETGSM` connection in SM59. Templates also use `ZCHE_NETGSM_EXT`. [Program source](src/zche_sms_netgsm.prog.abap)
+3. **Free check.** In SA38 run `ZCHE_SMS_NETGSM` and list sender names. An empty list with `00` confirms that the connection works. Sends with an undefined sender name are rejected with `40`.
 
-![A4H’de Türkçe SMS önizlemesi. Maskeli alıcı, gönderilecek metin ve tahmini kredi aynı ekranda.](docs/img/S11-preview.png)
+## Validation
 
-**Doğrulama.** SAP iki Netgsm hedefine bağlandı, şablon listesini okudu ve karakter sayımını sorguladı. Test hesabında onaylı gönderici adı bulunmadığı için telefona teslim doğrulanamadı. OTP düzeltmesini içeren 51 birim testi yerelde geçti. Önceki A4H çalıştırmasında 50 test geçmişti. [Test sonuçları](VALIDATION.tr.md) · [Değişiklikler](CHANGELOG.md) · [MIT lisansı](LICENSE)
+All 51 ABAP Unit tests passed on A4H (client 001, SAP_BASIS 816). An OTP preview on the same system omitted the code and request body. A real Netgsm account verified both HTTPS connections, template listing and character counting. Delivery to a phone remains unverified because that account had no approved sender name. [Test results](VALIDATION.md) · [Changes](CHANGELOG.md) · [MIT license](LICENSE)
+
+SAP and Netgsm are trademarks of their respective owners. This project is not affiliated with or endorsed by either.
