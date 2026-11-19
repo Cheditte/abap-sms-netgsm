@@ -4,6 +4,10 @@
 
 Tests in A4H client 001 (SAP_BASIS 816) verified the SMS preview and the connection to Netgsm. The test account had no approved sender name. Netgsm returned `40` for the live OTP attempt. No SMS reached the phone and the attempt incurred no charge.
 
+## OTP logging regression
+
+On 20 November 2026 all 51 unit tests passed locally using the Open ABAP runtime and a simulated Netgsm backend. The new test failed on the previous implementation. Three additional checks captured the messages passed to the application log. With text logging enabled, the OTP body was absent and ordinary SMS text was present. With logging disabled, ordinary SMS text was also absent. This run did not contact Netgsm. The SAP results below are from the earlier build.
+
 ## Results observed in SAP
 
 | Check | Observed result |

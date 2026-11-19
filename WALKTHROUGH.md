@@ -26,7 +26,7 @@ Menu labels follow the November 2026 test notes.
 1. Open [`src/zche_sms_netgsm.prog.abap`](src/zche_sms_netgsm.prog.abap) and copy the whole file (**Copy raw file**).
 2. In **SE38**, create program `ZCHE_SMS_NETGSM`: title `SAP’den Netgsm ile SMS`, type **Executable program**, your package (or **Local object** to try).
 3. Delete everything SE38 put in, paste, and **activate** (Ctrl+F3).
-4. Check: **Program → Execute → Unit Tests** (in ADT, Ctrl+Shift+F10). **50 tests** must pass. They use a test double and never call Netgsm.
+4. Check: **Program → Execute → Unit Tests** (in ADT, Ctrl+Shift+F10). Check for **51 passing tests** and zero failures. They use a test double and never call Netgsm.
 
 The program in this repository shows actions and results in Turkish when you log on in Turkish and in English otherwise. The Turkish send and preview screenshots come from a local Turkish build on A4H client 001.
 
@@ -97,7 +97,7 @@ An empty list with `00` confirms the connection. Sending still requires an appro
 2. Leave **Preview only, send nothing** (**Yalnızca önizleme, gönderme** in the screenshot) selected and press **Execute**. The result shows the following details.
    - the character set, the character count and the parts;
    - the masked numbers, and the rejected numbers with the reason;
-   - the exact request that would go to Netgsm, with the numbers masked.
+   - for standard SMS, the request that would go to Netgsm, with the numbers masked. OTP previews show the count and masked recipient and omit the text and request body.
 
    Tick *Also count at Netgsm* to compare with Netgsm's own count (free).
 3. Untick **Preview only** and execute again. A popup asks for confirmation and shows the estimated SMS credits. **This costs money.**
@@ -113,7 +113,23 @@ The preview counts one valid recipient and one SMS part. **DRY_RUN** shows the m
 
 ![Turkish preview result with masked recipient in A4H](docs/img/S11-preview.png)
 
-[OTP SMS](docs/img/S10-otp.png) · [Delivery report](docs/img/S10-report.png) · [Scheduled SMS cancellation](docs/img/S10-cancel.png)
+The [OTP selection screen](docs/img/S10-otp.png) shows an earlier version. The current OTP screen hides the message logging checkbox.
+
+[Delivery report](docs/img/S10-report.png) · [Scheduled SMS cancellation](docs/img/S10-cancel.png)
+
+<a id="incoming-sms"></a>
+
+#### Read incoming SMS
+
+Select **INBOX – Incoming SMS**. For a first check, enter the same day in both date fields and press **F8**. You can query a range of up to 30 days. Each row shows the message text, receipt time in Türkiye, operator and sender number (masked by default). Code `40` means the query returned no messages.
+
+Leave both dates empty to fetch only new messages. Netgsm marks the returned messages as listed, so use a date range to look them up again.
+
+<a id="job-statistics"></a>
+
+#### Read statistics for a send
+
+Select **STATS – Statistics of a job**. Enter **one Netgsm job ID** returned when a send was accepted, optionally enter its send date, and press **F8**. For each status returned by Netgsm, the list shows the number of SMS messages, total parts and charge information. To check delivery for an individual recipient, use **Delivery report**.
 
 #### What the recipient sees
 
@@ -123,7 +139,7 @@ In this example, the sender is **FIRMA** and the message says “Test belgesi ha
 
 ### 7. Application log (optional)
 
-To keep a record in SLG1, create log object **`ZCHE_SMS`** once in **SLG0**; no subobject is needed. Without it the program still works: the result is only in the list and in the job log, and the list says so. The log holds the action, code, job ID, sender name, character set, parts and **masked** numbers. The text is logged only when you tick **Also log the message text**. Texts sent with `PERFORM send_otp` are never logged, because they are codes.
+To keep a record in SLG1, create log object **`ZCHE_SMS`** once in **SLG0**; no subobject is needed. Without it the program still works: the result is only in the list and in the job log, and the list says so. The log holds the action, code, job ID, sender name, character set, parts and **masked** numbers. For standard SMS, **Also log the message text** opts in to storing the content. OTP text is omitted from the application log, result list and resulting background spool, including when an older variant requests text logging.
 
 ## Use it from your programs
 
@@ -150,12 +166,20 @@ WRITE: / lv_code, lv_message.  " Expected: DRY_RUN
 | `send_template` | numbers, template ID, `name=value` lines, sender name, preview flag |
 | `cancel_sms` | job ID of a later send |
 
-- Code `00` means Netgsm accepted the request, and the job ID is set. Anything else means not sent or not sure, and the message explains.
+- For sends, `00`, `01` or `02` indicates acceptance. Save the returned job ID and use the delivery report to check receipt.
 - With the preview flag set, everything is checked and nothing is sent (`DRY_RUN`).
 - There is no popup and no list. The destinations are `ZCHE_NETGSM` and `ZCHE_NETGSM_EXT`, and the calling user needs `S_ICF` for them.
 - The log entry is written in the caller's LUW: if the caller rolls back, it is gone too.
 
-**Non-dialog use.** A live selection-screen send via `SUBMIT` or RFC stopped at the confirmation popup with *Screen output without connection to user*, before dispatch. Use `PERFORM send_sms`, `send_otp` or `send_template` in a calling program or background job. Live batch delivery remains untested.
+<a id="background"></a>
+
+### Send from a background job
+
+1. Put the `PERFORM send_sms` example above in your own executable Z program. Use `send_otp` for a one-time code or `send_template` for a template. Each routine returns a result code, job ID and explanation without opening a confirmation dialog.
+2. In **SM36**, schedule your program as the job step. Grant the job user `S_ICF` for the required SM59 destination. Keep the preview parameter set to `abap_true` for the first run. In **SM37**, open the spool and check for the `DRY_RUN` line printed by the example.
+3. For a paid send, supply the intended recipient and the approved sender name, then change the preview parameter to `abap_false`. If the connection drops, check the Netgsm panel or delivery report before retrying.
+
+On A4H, invoking the interactive selection screen from a non-dialog `SUBMIT`/RFC call raised a runtime error at the confirmation popup. Use the external routine above for a background integration. Delivery to a phone from a real background job remains unverified.
 
 ## Characters, length and cost
 

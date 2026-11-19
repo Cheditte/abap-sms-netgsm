@@ -2,9 +2,11 @@
 
 ## Henüz yayımlanmayanlar
 
+- OTP metni, eski varyantlarda günlük seçeneği açıkken de SAP uygulama günlüğünden ve önizleme çıktısından çıkarıldı. Netgsm hata ayrıntıları OTP içeriğini geri yansıtamaz. Standart SMS için isteğe bağlı metin kaydı sürüyor.
+
 - Türkçe ve İngilizce kurulum rehberlerine A4H ekranları, temsili telefon görünümü ve gerçek Netgsm hesabıyla yapılan kontroller eklendi.
 
-- Netgsm HTTP 406 döndürdüğünde, yanıt gövdesinde `00` veya `30` gibi okunabilir bir sonuç kodu varsa program bu kodu gösterir. Kod okunamıyorsa `HTTP_ERROR` döner. Bu durum 50 birim testini içeren pakette kontrol edilir (`83f5c20`).
+- Netgsm HTTP 406 döndürdüğünde, yanıt gövdesinde `00` veya `30` gibi okunabilir bir sonuç kodu varsa program bu kodu gösterir. Kod okunamıyorsa `HTTP_ERROR` döner. Bu düzeltme ilk kez 50 birim testini içeren pakette kontrol edildi (`83f5c20`).
 
 ## 0.2.0
 

@@ -4,7 +4,7 @@
 
 SAP mesajı hazırlar ve SM59’da tanımlı bağlantı üzerinden Netgsm’e iletir. Netgsm de SMS’i alıcıya gönderir. İlk kurulumda gönderici adı başvurusunu erken başlatın. Onayı beklerken bağlantıyı sınayabilir ve SAP’de ücretsiz önizleme yapabilirsiniz.
 
-[İlk kurulum](#kurulum) · [Bağlantıyı sına](#baglanti-testi) · [Örnek SMS hazırla](#onizleme) · [Gönderimi takip et](#takip)
+[İlk kurulum](#kurulum) · [Bağlantıyı sına](#baglanti-testi) · [Örnek SMS hazırla](#onizleme) · [Gönderimi takip et](#takip) · [Gelen SMS](#gelen-sms) · [İş istatistikleri](#is-istatistikleri) · [Arka plan gönderimi](#arka-plan)
 
 ![SAP, SM59 hedefi üzerinden Netgsm’e HTTPS isteği gönderir. Netgsm mesajı SMS olarak telefona iletir.](docs/img/netgsm-sms-flow.webp)
 
@@ -30,7 +30,7 @@ Menü adları Kasım 2026 test notlarından alınmıştır.
 1. [`src/zche_sms_netgsm.prog.abap`](src/zche_sms_netgsm.prog.abap) dosyasını açın ve tamamını kopyalayın (**Copy raw file**).
 2. **SE38**'de `ZCHE_SMS_NETGSM` programını oluşturun: başlık `SAP’den Netgsm ile SMS`, tip **Yürütülebilir program**, paketiniz (denemek için **Yerel nesne**).
 3. SE38'in koyduğu her şeyi silin, yapıştırın ve **aktifleştirin** (Ctrl+F3).
-4. Kontrol: **Program → Yürüt → Birim testleri** (ADT'de Ctrl+Shift+F10). **50 testin** geçmesi gerekir. Testler sahte bir HTTP katmanı kullanır, Netgsm'i hiç çağırmaz.
+4. Kontrol: **Program → Yürüt → Birim testleri** (ADT'de Ctrl+Shift+F10). Sonuçta **51 testin** geçtiğini ve hata sayısının sıfır olduğunu kontrol edin. Testler sahte bir HTTP katmanı kullanır, Netgsm'i hiç çağırmaz.
 
 Aşağıdaki SE38 görüntüsü A4H/001’deki program özelliklerini gösterir. Gönderim adımlarında Türkçe işlem adlarını kullanıyoruz. Önceki testten kalan bazı sonuç ekranları İngilizcedir.
 
@@ -55,6 +55,8 @@ Deneme sisteminde ilk çağrı `SSSLERR_PEER_CERT_UNTRUSTED` hatasıyla düştü
 2. **STRUST**'ta **SSL client Anonymous**'u açın. Bu `ANONYM`'dir; hedefinizin kendi PSE'si varsa onu kullanın.
 3. **Sertifikayı içe aktar** → dosya → **Sertifika listesine ekle** → **Kaydet**.
 4. Bağlantı testi hâlâ düşüyorsa Basis'ten ICM'nin PSE'yi yeniden yüklemesini isteyin.
+
+<a id="sm59"></a>
 
 ### 4. SM59: bağlantı ve şifre
 
@@ -121,7 +123,7 @@ SA38’de `ZCHE_SMS_NETGSM` programını açın. **İşlem** alanında **HEADERS
 
 #### Tek kullanımlık kod göndermek
 
-**OTP – OTP SMS gönder (tek numara)** işlemini seçin. OTP paketi, bir alıcı ve tek parçaya sığan bir metin gerekir. Aşağıdaki ekran giriş alanlarını gösterir. Test hesabında onaylı gönderici adı bulunmadığı için canlı OTP denemesinde `40` alındı.
+**OTP – OTP SMS gönder (tek numara)** işlemini seçin. OTP paketi, bir alıcı ve tek parçaya sığan bir metin gerekir. Aşağıdaki görüntü önceki sürümdendir. Güncel sürüm OTP işleminde metni günlüğe yazma kutusunu gizler. Önizleme alıcıyı maskeler, parça sayısını gösterir ve kodu içeren metni veya istek gövdesini listeye yazmaz. Test hesabında onaylı gönderici adı bulunmadığı için canlı OTP denemesinde `40` alındı.
 
 ![A4H’de tek numaraya OTP SMS hazırlama ekranı ve seçili önizleme kutusu](docs/img/S10-otp.png)
 
@@ -147,6 +149,20 @@ A4H’de yalnızca bir tarih girildiğinde program `BAD_INPUT` döndürüp iki t
 
 Testte örnek `123` iş numarası için Netgsm `60` döndürdü. Bu kod, iptal edilecek işin bulunamadığını bildirir. [A4H’de görülen iptal sonucu](docs/img/S23-cancel-unknown-job.png)
 
+<a id="gelen-sms"></a>
+
+#### Gelen SMS’leri okuma
+
+**INBOX – Gelen SMS** işlemini seçin. İlk denemede hem başlangıç hem bitiş tarihine aynı günü girip **F8**’e basın. Daha geniş bir sorgu için en fazla 30 günlük aralık kullanın. Liste, mesaj metnini, Türkiye saatiyle alınma zamanını, operatörü ve varsayılan olarak maskeli gönderici numarasını gösterir. `40` o sorguda mesaj bulunmadığı anlamına gelir.
+
+İki tarihi de boş bırakırsanız Netgsm yalnızca yeni mesajları döndürür ve döndürdüklerini listelenmiş olarak işaretler. Aynı iletilere tekrar bakmak için tarih aralığı girin.
+
+<a id="is-istatistikleri"></a>
+
+#### Bir gönderimin istatistiklerini görme
+
+**STATS – Bir işin istatistiği** işlemini seçin. Netgsm’in gönderimi kabul ederken verdiği **tek bir iş numarasını** girin ve **F8**’e basın. Gerekirse gönderim tarihini de ekleyin. Sonuç, Netgsm’in döndürdüğü her durum için SMS sayısını, toplam parça sayısını ve ücret bilgisini gösterir. Tek bir alıcının teslim durumunu görmek için [teslim raporunu](#takip) kullanın.
+
 #### Alıcı telefonunda ne görür?
 
 Örnekte alıcı, **FIRMA** başlığı altında “Test belgesi hazırlandı.” mesajını görür. `B021`, Netgsm’in harfli gönderici adıyla yollanan SMS’e eklediği koddur. Aşağıdaki görsel temsili olarak üretildi. Test hesabında onaylı gönderici adı olmadığı için telefona teslim doğrulanamadı.
@@ -155,7 +171,7 @@ Testte örnek `123` iş numarası için Netgsm `60` döndürdü. Bu kod, iptal e
 
 ### 7. Uygulama günlüğü (isteğe bağlı)
 
-SLG1'de kayıt tutmak için **SLG0**'da bir kez **`ZCHE_SMS`** günlük nesnesini oluşturun; alt nesne gerekmez. Nesne olmadan da program çalışır: sonuç yalnızca listede ve job günlüğünde olur, liste de bunu söyler. Günlükte işlem, kod, iş numarası, gönderici adı, karakter seti, parça sayısı ve **maskeli** numaralar bulunur. Metin yalnızca **Mesaj metnini de günlüğe yaz** işaretliyse yazılır. `PERFORM send_otp` ile gönderilen metinler kod oldukları için hiç yazılmaz.
+SLG1'de kayıt tutmak için **SLG0**'da bir kez **`ZCHE_SMS`** günlük nesnesini oluşturun; alt nesne gerekmez. Nesne olmadan da program çalışır: sonuç yalnızca listede ve job günlüğünde olur, liste de bunu söyler. Günlükte işlem, kod, iş numarası, gönderici adı, karakter seti, parça sayısı ve **maskeli** numaralar bulunur. Standart SMS metnini kaydetmek için **Mesaj metnini de günlüğe yaz** seçeneğini işaretleyebilirsiniz. OTP metni uygulama günlüğüne, sonuç listesine veya bu listenin arka plan makarasına yazılmaz. Önceden kaydedilmiş bir varyantta metin kaydı açık olsa da bu kural geçerlidir.
 
 ## Kendi programlarınızdan kullanım
 
@@ -183,12 +199,20 @@ WRITE: / lv_code, lv_message.  " Expected: DRY_RUN
 | `send_template` | numaralar, şablon numarası, `ad=değer` satırları, gönderici adı, önizleme |
 | `cancel_sms` | ileri tarihli gönderimin iş numarası |
 
-- `00`: Netgsm isteği kabul etti, iş numarası dolu. Başka her kod "gönderilmedi" ya da "emin değiliz" demektir; mesaj açıklar.
+- Gönderimde `00`, `01` veya `02` kabul sonucudur. Dönen iş numarasını saklayın ve teslimi rapordan kontrol edin.
 - Önizleme işaretliyse her şey kontrol edilir, hiçbir şey gönderilmez (`DRY_RUN`).
 - Onay penceresi ve liste yok. Hedefler `ZCHE_NETGSM` ve `ZCHE_NETGSM_EXT`; çağıran kullanıcının bunlar için `S_ICF` yetkisi olmalı.
 - Günlük kaydı çağıranın LUW'unda yazılır. Çağıran ROLLBACK yaparsa kayıt da gider.
 
-**Ekransız kullanım.** Canlı gönderimi `SUBMIT` veya RFC ile başlatmak, onay penceresinde *Screen output without connection to user* dökümüne yol açtı. İstek gönderilmemişti. Başka programdan veya arka plan işinden `PERFORM send_sms`, `send_otp` ya da `send_template` çağırın. Gerçek bir arka plan işiyle teslim henüz sınanmadı.
+<a id="arka-plan"></a>
+
+### Arka plan işinden gönderim
+
+1. Kendi çalıştırılabilir Z programınıza yukarıdaki `PERFORM send_sms` örneğini ekleyin. OTP için `send_otp`, şablon için `send_template` kullanın. Bu çağrılar onay penceresi açmadan sonuç kodunu, iş numarasını ve açıklamayı döndürür.
+2. **SM36**’da iş adımı olarak kendi programınızı seçin. İş kullanıcısına gereken SM59 hedefi için `S_ICF` yetkisini verin. İlk çalıştırmada önizleme parametresi `abap_true` kalsın. **SM37**’de işin makara çıktısında örneğin yazdığı `DRY_RUN` sonucunu kontrol edin.
+3. Ücretli gönderim için gerçek alıcıyı ve onaylı gönderici adını girip önizleme parametresini `abap_false` yapın. Bağlantı kesilirse yeniden göndermeden önce Netgsm panelini veya teslim raporunu kontrol edin.
+
+A4H denemesinde etkileşimli seçim ekranını ekransız `SUBMIT`/RFC üzerinden çağırmak, onay penceresinde kısa döküm verdi. Arka plan entegrasyonu için yukarıdaki alt yordamı kullanın. Gerçek bir arka plan işinden telefona teslim henüz doğrulanmadı.
 
 ## Karakterler, uzunluk ve maliyet
 

@@ -4,6 +4,10 @@
 
 A4H/001’de (SAP_BASIS 816) SMS önizlemesi ve Netgsm hesabına bağlantı doğrulandı. Hesabın onaylı gönderici adı yoktu. Gerçek OTP denemesinde Netgsm `40` döndürdü. Telefona SMS ulaşmadı ve bu deneme için ücret alınmadı.
 
+## OTP günlük testi
+
+20 Kasım 2026’da 51 birim testi Open ABAP çalıştırıcısı ve sahte Netgsm bağlantısıyla yerelde geçti. Yeni test önceki kodda başarısız oldu. Üç ek kontrolde uygulama günlüğüne iletilen satırlar incelendi. Metin kaydı açıkken OTP metni gizli kaldı ve standart SMS metni kaydedildi. Kayıt kapalıyken standart SMS metni de yazılmadı. Bu çalıştırmada Netgsm’e istek gönderilmedi. Aşağıdaki SAP sonuçları önceki sürüme aittir.
+
 ## SAP’de görülen sonuçlar
 
 | Kontrol | Gözlenen sonuç |
