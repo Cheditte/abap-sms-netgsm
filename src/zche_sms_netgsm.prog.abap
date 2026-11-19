@@ -507,11 +507,11 @@ CLASS lcl_text IMPLEMENTATION.
         lv_en = `Netgsm's answer cannot be read: &1`.
         lv_tr = `Netgsm'in cevabı okunamadı: &1`.
       WHEN 'OTP_REPLY'.
-        LV_EN = `Netgsm returned an unreadable OTP response.`.
-        LV_TR = `Netgsm OTP yanıtı okunamadı.`.
+        lv_en = `Netgsm returned an unreadable OTP response.`.
+        lv_tr = `Netgsm OTP yanıtı okunamadı.`.
       WHEN 'OTP_CONN'.
-        LV_EN = `No response to the OTP request.`.
-        LV_TR = `OTP isteğine yanıt alınamadı.`.
+        lv_en = `No response to the OTP request.`.
+        lv_tr = `OTP isteğine yanıt alınamadı.`.
 *     Netgsm codes. The same code can mean different things in
 *     different services: <SERVICE>_<code> first, then C<code>.
       WHEN 'C00'.
@@ -2676,12 +2676,12 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
     IF rs_result-text_info-ok = abap_false.
       rs_result-code = lif_sms=>code-bad_text.
       rs_result-message = rs_result-text_info-message.
-      CLEAR RS_RESULT-TEXT_INFO-TEXT.
+      CLEAR rs_result-text_info-text.
       RETURN.
     ENDIF.
 
-    LV_BODY = OTP_BODY( RS_RESULT ).
-    CLEAR RS_RESULT-TEXT_INFO-TEXT.
+    lv_body = otp_body( rs_result ).
+    CLEAR rs_result-text_info-text.
     CONCATENATE lif_sms=>api_path `/otp` INTO lv_path.
     finish_send( EXPORTING iv_destination = mv_destination
                            iv_path        = lv_path
@@ -3465,6 +3465,7 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
     DATA ls_http TYPE lif_sms=>ty_http.
     DATA lv_description TYPE string.
     DATA lx_error TYPE REF TO lcx_sms.
+    DATA lv_status TYPE string.
 
     CLEAR: ev_code, ev_message, et_values, ev_status.
     check_access( EXPORTING iv_destination = iv_destination
@@ -3486,29 +3487,31 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
       CATCH lcx_sms INTO lx_error.
         ev_code = lx_error->code.
         ev_message = lx_error->text.
-        IF IV_ACTION = LIF_SMS=>ACTION-OTP.
-          CASE EV_CODE.
-            WHEN LIF_SMS=>CODE-HTTP.
-              EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'HTTP'
-                IV_1 = INT_TEXT( EV_STATUS ) ).
-            WHEN LIF_SMS=>CODE-NO_CONN.
-              EV_MESSAGE = LCL_TEXT=>GET( 'OTP_CONN' ).
-            WHEN LIF_SMS=>CODE-NO_TRUST OR LIF_SMS=>CODE-NO_DEST
-              OR LIF_SMS=>CODE-NO_AUTH.
-              EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = EV_CODE
-                                          IV_1 = IV_DESTINATION ).
+        IF iv_action = lif_sms=>action-otp.
+          CASE ev_code.
+            WHEN lif_sms=>code-http.
+              " 7.00: no method call as an actual parameter
+              lv_status = int_text( ev_status ).
+              ev_message = lcl_text=>get( iv_key = 'HTTP'
+                                          iv_1   = lv_status ).
+            WHEN lif_sms=>code-no_conn.
+              ev_message = lcl_text=>get( 'OTP_CONN' ).
+            WHEN lif_sms=>code-no_trust OR lif_sms=>code-no_dest
+              OR lif_sms=>code-no_auth.
+              ev_message = lcl_text=>get( iv_key = ev_code
+                                          iv_1 = iv_destination ).
             WHEN OTHERS.
-              EV_MESSAGE = LCL_TEXT=>GET( 'OTP_REPLY' ).
+              ev_message = lcl_text=>get( 'OTP_REPLY' ).
           ENDCASE.
         ENDIF.
         RETURN.
     ENDTRY.
-    IF IV_ACTION = LIF_SMS=>ACTION-OTP.
-      CLEAR LV_DESCRIPTION.
-      IF EV_CODE CN '0123456789' OR STRLEN( EV_CODE ) > 3.
-        EV_CODE = LIF_SMS=>CODE-BAD_REPLY.
-        EV_MESSAGE = LCL_TEXT=>GET( 'OTP_REPLY' ).
-        CLEAR ET_VALUES.
+    IF iv_action = lif_sms=>action-otp.
+      CLEAR lv_description.
+      IF ev_code CN '0123456789' OR strlen( ev_code ) > 3.
+        ev_code = lif_sms=>code-bad_reply.
+        ev_message = lcl_text=>get( 'OTP_REPLY' ).
+        CLEAR et_values.
         RETURN.
       ENDIF.
     ENDIF.
@@ -3739,7 +3742,7 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
                   INTO cs_result-message SEPARATED BY ` `.
       RETURN.
     ENDIF.
-    IF CS_RESULT-ACTION <> LIF_SMS=>ACTION-OTP.
+    IF cs_result-action <> lif_sms=>action-otp.
       cs_result-description = lcl_sms_json=>value_of(
                               it_values = lt_values
                               iv_path   = `description` ).
@@ -3748,10 +3751,10 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
        OR cs_result-code = `02`.
       cs_result-sent = abap_true.
     ENDIF.
-    IF CS_RESULT-ACTION <> LIF_SMS=>ACTION-OTP OR
-       CS_RESULT-SENT = ABAP_TRUE.
-      CS_RESULT-JOBID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
-                                               IV_PATH = `jobid` ).
+    IF cs_result-action <> lif_sms=>action-otp OR
+       cs_result-sent = abap_true.
+      cs_result-jobid = lcl_sms_json=>value_of( it_values = lt_values
+                                               iv_path = `jobid` ).
     ENDIF.
   ENDMETHOD.
 
@@ -3806,7 +3809,7 @@ CLASS lcl_sms_netgsm IMPLEMENTATION.
 
     READ TABLE is_result-recipients INTO ls_recipient
          WITH KEY ok = abap_true.
-    LV_NUMBER = LS_RECIPIENT-NUMBER.
+    lv_number = ls_recipient-number.
     lv_text = lcl_sms_json=>escape( is_result-text_info-text ).
     lv_header = lcl_sms_json=>escape( is_result-header ).
     CONCATENATE `{"msgheader":"` lv_header `","msg":"` lv_text
@@ -4096,7 +4099,7 @@ CLASS lcl_sms_log IMPLEMENTATION.
     ENDLOOP.
 
     IF iv_with_text = abap_true
-       AND IS_RESULT-ACTION <> LIF_SMS=>ACTION-OTP
+       AND is_result-action <> lif_sms=>action-otp
        AND is_result-text_info-text IS NOT INITIAL.
       lv_text = lcl_text=>get( iv_key = 'LOG_TEXT'
                                iv_1   = is_result-text_info-text ).
@@ -4522,7 +4525,7 @@ CLASS lcl_app IMPLEMENTATION.
       WHEN 'SND' OR 'NUM'.
         lv_actions = `SEND OTP TEMPLATE`.
       WHEN 'LOG'.
-        LV_ACTIONS = `SEND TEMPLATE`.
+        lv_actions = `SEND TEMPLATE`.
       WHEN 'HDR' OR 'ENC'.
         lv_actions = `SEND OTP TEMPLATE LENGTH`.
       WHEN 'TXT'.
@@ -5295,10 +5298,10 @@ CLASS lcl_app IMPLEMENTATION.
         heading( 'L_TEXT' ).
         write_long( is_result-text_info-text ).
       ENDIF.
-      IF IS_RESULT-REQUEST IS NOT INITIAL.
+      IF is_result-request IS NOT INITIAL.
         SKIP.
-        HEADING( 'L_REQUEST' ).
-        WRITE_LONG( IS_RESULT-REQUEST ).
+        heading( 'L_REQUEST' ).
+        write_long( is_result-request ).
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -6804,14 +6807,14 @@ CLASS ltc_services IMPLEMENTATION.
   METHOD otp_request.
     DATA ls_result TYPE lif_sms=>ty_result.
     DATA lv_exp TYPE string.
-    DATA LV_TEXT TYPE STRING.
+    DATA lv_text TYPE string.
 
-    LV_TEXT = LTU_CHARS=>CHAR( 351 ).
-    CONCATENATE LV_TEXT `ifre: 123456` INTO LV_TEXT.
+    lv_text = ltu_chars=>char( 351 ).
+    CONCATENATE lv_text `ifre: 123456` INTO lv_text.
     mo_backend->reply = `{"jobid":"88","code":"00","description":"x"}`.
     ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  IV_TEXT    = LV_TEXT
-                                  IV_ASCII   = ABAP_TRUE
+                                  iv_text    = lv_text
+                                  iv_ascii   = abap_true
                                   iv_header  = `FIRMA`
                                   iv_dry_run = abap_false ).
     cl_aunit_assert=>assert_equals( act = ls_result-sent
@@ -6828,8 +6831,8 @@ CLASS ltc_services IMPLEMENTATION.
     cl_aunit_assert=>assert_equals( act = ls_result-text_info-parts
                                     exp = 1
                                     msg = 'one part' ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-JOBID EXP = `88` ).
+    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
+    cl_aunit_assert=>assert_equals( act = ls_result-jobid exp = `88` ).
   ENDMETHOD.
 
 
@@ -6857,14 +6860,14 @@ CLASS ltc_services IMPLEMENTATION.
     cl_aunit_assert=>assert_equals( act = ls_result-code
                                     exp = lif_sms=>code-bad_text
                                     msg = 'Turkish letter' ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
+    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
     ls_result = mo_cut->send_otp( it_numbers = mt_numbers
                                   iv_text    = lv_text
                                   iv_header  = `FIRMA`
                                   iv_ascii   = abap_true ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
-                                    EXP = LIF_SMS=>CODE-DRY_RUN
-                                    MSG = 'ASCII preview accepted' ).
+    cl_aunit_assert=>assert_equals( act = ls_result-code
+                                    exp = lif_sms=>code-dry_run
+                                    msg = 'ASCII preview accepted' ).
 
     " 155 characters fit with a sender name with letters, 156 not
     lv_text = ltu_chars=>repeat( iv_text = `a` iv_times = 155 ).
@@ -6889,41 +6892,41 @@ CLASS ltc_services IMPLEMENTATION.
 
   METHOD otp_output_is_private.
 
-    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+    DATA ls_result TYPE lif_sms=>ty_result.
 
-    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
-                                  IV_TEXT    = `Passcode 482951`
-                                  IV_HEADER  = `FIRMA` ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
-                                    EXP = LIF_SMS=>CODE-DRY_RUN ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-REQUEST ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS EXP = 0 ).
+    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
+                                  iv_text    = `Passcode 482951`
+                                  iv_header  = `FIRMA` ).
+    cl_aunit_assert=>assert_equals( act = ls_result-code
+                                    exp = lif_sms=>code-dry_run ).
+    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
+    cl_aunit_assert=>assert_initial( act = ls_result-request ).
+    cl_aunit_assert=>assert_equals( act = mo_backend->calls exp = 0 ).
 
-    MO_BACKEND->STATUS = 503.
-    MO_BACKEND->REPLY = `Error processing Passcode 482951`.
-    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
-                                  IV_TEXT    = `Passcode 482951`
-                                  IV_HEADER  = `FIRMA`
-                                  IV_DRY_RUN = ABAP_FALSE ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
-                                    EXP = LIF_SMS=>CODE-HTTP ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-REQUEST ).
-    IF LS_RESULT-MESSAGE CS '482951'.
-      CL_AUNIT_ASSERT=>FAIL( MSG = 'OTP exposed in the HTTP error' ).
+    mo_backend->status = 503.
+    mo_backend->reply = `Error processing Passcode 482951`.
+    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
+                                  iv_text    = `Passcode 482951`
+                                  iv_header  = `FIRMA`
+                                  iv_dry_run = abap_false ).
+    cl_aunit_assert=>assert_equals( act = ls_result-code
+                                    exp = lif_sms=>code-http ).
+    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
+    cl_aunit_assert=>assert_initial( act = ls_result-request ).
+    IF ls_result-message CS '482951'.
+      cl_aunit_assert=>fail( msg = 'OTP exposed in the HTTP error' ).
     ENDIF.
 
-    MO_BACKEND->STATUS = 200.
-    MO_BACKEND->REPLY = `{"code":"99","description":"482951"}`.
-    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
-                                  IV_TEXT    = `Passcode 482951`
-                                  IV_HEADER  = `FIRMA`
-                                  IV_DRY_RUN = ABAP_FALSE ).
-    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE EXP = `99` ).
-    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-DESCRIPTION ).
-    IF LS_RESULT-MESSAGE CS '482951'.
-      CL_AUNIT_ASSERT=>FAIL( MSG = 'OTP in the provider error' ).
+    mo_backend->status = 200.
+    mo_backend->reply = `{"code":"99","description":"482951"}`.
+    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
+                                  iv_text    = `Passcode 482951`
+                                  iv_header  = `FIRMA`
+                                  iv_dry_run = abap_false ).
+    cl_aunit_assert=>assert_equals( act = ls_result-code exp = `99` ).
+    cl_aunit_assert=>assert_initial( act = ls_result-description ).
+    IF ls_result-message CS '482951'.
+      cl_aunit_assert=>fail( msg = 'OTP in the provider error' ).
     ENDIF.
 
   ENDMETHOD.
