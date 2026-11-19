@@ -15,7 +15,8 @@ When a document is ready in SAP, you can notify someone by SMS. Enter the recipi
 | Prepare the Netgsm account and SAP connection | [Setup walkthrough](WALKTHROUGH.md) |
 | Prepare a message for one or more recipients, schedule it, or use a template | [Preview and send](WALKTHROUGH.md#6-preview-then-send) |
 | Send a one-time code | Choose the OTP SMS package and preview the request for one recipient. [Walkthrough](WALKTHROUGH.md) |
-| Read delivery reports, incoming SMS or job statistics | Choose the relevant action. For date-range queries, enter both dates. [Result codes](WALKTHROUGH.md#result-codes) |
+| Check a delivery, read incoming SMS or view totals for a send | [Delivery report](WALKTHROUGH.md#6-preview-then-send) · [Incoming SMS](WALKTHROUGH.md#incoming-sms) · [Job statistics](WALKTHROUGH.md#job-statistics) |
+| Send from a background job | [Schedule a preview and send](WALKTHROUGH.md#background) |
 | Call the tool from my ABAP program | [PERFORM example with preview](WALKTHROUGH.md#use-it-from-your-programs) |
 | See what was tested with a real account | [Validation and limits](VALIDATION.md) |
 
@@ -27,4 +28,4 @@ When a document is ready in SAP, you can notify someone by SMS. Enter the recipi
 
 ## Validation
 
-All 50 unit tests passed on A4H client 001 (SAP_BASIS 816). Queries against a real account verified both HTTPS destinations, template listing and character counting. The account had no approved sender name, so delivery to a phone remains unverified. [Test results](VALIDATION.md) · [Changes](CHANGELOG.md) · [MIT license](LICENSE)
+All 51 unit tests passed locally with the OTP fix. The previous A4H run (client 001, SAP_BASIS 816) passed 50 tests. A real Netgsm account verified both HTTPS connections, template listing and character counting. Delivery to a phone remains unverified because that account had no approved sender name. [Test results](VALIDATION.md) · [Changes](CHANGELOG.md) · [MIT license](LICENSE)
