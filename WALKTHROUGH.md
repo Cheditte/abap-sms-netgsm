@@ -1,17 +1,12 @@
 # Send SMS from SAP through Netgsm
 
-[Türkçe](WALKTHROUGH.tr.md) · [Overview](README.en.md) · [Validation](VALIDATION.md)
+[Türkçe](WALKTHROUGH.tr.md) · [Overview](README.md) · [Validation](VALIDATION.md)
 
 Apply for a sender name first. While approval is pending, you can test the connection and preview a message for free.
 
 ![SAP uses its SM59 destination to call Netgsm over HTTPS. Netgsm forwards the message to the phone as an SMS.](docs/img/netgsm-sms-flow.webp)
 
 ### 1. Prepare the Netgsm account
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/netgsm-light.svg">
-  <img src="docs/img/netgsm.svg" width="128" alt="Netgsm">
-</picture>
 
 1. **Sender name.** In the main account open **SMS → SMS Ayarları → Gönderici Adlarım**. Apply with supporting documents and submit the form via KEP (registered electronic mail). The test account was asked for proof of identity and authority. Approval can take days. Enter the approved spelling in SAP. An OTP request using the subscriber number as the sender returned `40`.
 2. **Package.** Bulk SMS covers standard and template messages. OTP SMS is for a single-part code to one number.
@@ -230,4 +225,3 @@ Netgsm has two SMS APIs. The newer v3 wants the password in a JSON body to get a
 - Netgsm documentation (REST v2): <https://www.netgsm.com.tr/dokuman/>
 - Netgsm SMS API v3 documentation: <https://api-docs.netgsm.com.tr/>
 - [DESIGN.md](DESIGN.md): design decisions, in Turkish
-- [Official Netgsm logo artwork](https://cdn.netgsm.com.tr/images/logos/netgsm/dark/netgsm-logo.svg)

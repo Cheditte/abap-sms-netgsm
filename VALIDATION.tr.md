@@ -1,18 +1,19 @@
 # Netgsm test sonuçları
 
-[English](VALIDATION.md) · [Ana sayfa](README.md) · [Kurulum ve kullanım](WALKTHROUGH.tr.md)
+[English](VALIDATION.md) · [Ana sayfa](README.tr.md) · [Kurulum ve kullanım](WALKTHROUGH.tr.md)
 
 A4H/001’de (SAP_BASIS 816) SMS önizlemesi ve Netgsm hesabına bağlantı doğrulandı. Hesabın onaylı gönderici adı yoktu. Gerçek OTP denemesinde Netgsm `40` döndürdü. Telefona SMS ulaşmadı ve bu deneme için ücret alınmadı.
 
 ## OTP günlük testi
 
-20 Kasım 2026’da 51 birim testi Open ABAP çalıştırıcısı ve sahte Netgsm bağlantısıyla yerelde geçti. Yeni test önceki kodda başarısız oldu. Üç ek kontrolde uygulama günlüğüne iletilen satırlar incelendi. Metin kaydı açıkken OTP metni gizli kaldı ve standart SMS metni kaydedildi. Kayıt kapalıyken standart SMS metni de yazılmadı. Bu çalıştırmada Netgsm’e istek gönderilmedi. Aşağıdaki SAP sonuçları önceki sürüme aittir.
+20 Kasım 2026’da 51 birim testi Open ABAP çalıştırıcısı ve sahte Netgsm bağlantısıyla yerelde geçti. Yeni test önceki kodda başarısız oldu. Üç ek kontrolde uygulama günlüğüne iletilen satırlar incelendi. Metin kaydı açıkken OTP metni gizli kaldı ve standart SMS metni kaydedildi. Kayıt kapalıyken standart SMS metni de yazılmadı. Bu çalıştırmada Netgsm’e istek gönderilmedi. Aynı gün `086925f` sürümü A4H/001’de (SAP_BASIS 816) uyarısız etkinleştirildi. 51 ABAP Unit testinin tamamı geçti.
 
 ## SAP’de görülen sonuçlar
 
 | Kontrol | Gözlenen sonuç |
 |---|---|
-| ABAP Unit | Beş sınıftaki 50 test geçti. Testler HTTP yanıtlarını taklit eder. [Test özeti](docs/img/S02-abap-unit.png) |
+| ABAP Unit | Beş sınıftaki 51 test geçti. Testler HTTP yanıtlarını taklit eder. [A4H test kaydı](https://github.com/Cheditte/abap-sms-netgsm/pull/5) |
+| Metin kaydı seçiliyken OTP önizlemesi | `DRY_RUN` döndü. Liste bir maskeli alıcı ve bir parça gösterdi. OTP metni ve istek gövdesi listede yer almadı. |
 | SMS önizlemesi | `FIRMA` için `DRY_RUN`, bir geçerli alıcı ve bir SMS parçası. Sonuç ekranında numara maskeli. [Önizleme](docs/img/S11-preview.png) |
 | Tek tarihli teslim raporu | Program ikinci tarihi istedi ve `BAD_INPUT` döndürdü. [Rapor ekranı](docs/img/S25-report-one-date.png) |
 | Var olmayan işi iptal | Netgsm, örnek `123` iş numarası için `60` döndürdü. [İptal sonucu](docs/img/S23-cancel-unknown-job.png) |

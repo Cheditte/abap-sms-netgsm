@@ -1,6 +1,6 @@
 # SAP’den Netgsm ile SMS
 
-[English](WALKTHROUGH.md) · [Ana sayfa](README.md) · [Test sonuçları](VALIDATION.tr.md)
+[English](WALKTHROUGH.md) · [Ana sayfa](README.tr.md) · [Test sonuçları](VALIDATION.tr.md)
 
 SAP mesajı hazırlar ve SM59’da tanımlı bağlantı üzerinden Netgsm’e iletir. Netgsm de SMS’i alıcıya gönderir. İlk kurulumda gönderici adı başvurusunu erken başlatın. Onayı beklerken bağlantıyı sınayabilir ve SAP’de ücretsiz önizleme yapabilirsiniz.
 
@@ -11,11 +11,6 @@ SAP mesajı hazırlar ve SM59’da tanımlı bağlantı üzerinden Netgsm’e il
 <a id="kurulum"></a>
 
 ### 1. Netgsm hesabını hazırlayın
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/netgsm-light.svg">
-  <img src="docs/img/netgsm.svg" width="128" alt="Netgsm">
-</picture>
 
 1. **Gönderici adı.** Ana hesapta **SMS → SMS Ayarları → Gönderici Adlarım** sayfasını açın. Başvuru belge yükleme ve KEP üzerinden iletim ister. Test hesabında kimlik ve yetki yazısı da istendi. Onay günler sürebilir. Onaylanan adı SAP’ye aynı yazımla girin. Abone numarasını gönderici adı olarak kullanan OTP denemesi `40` döndürdü.
 2. **Paket.** Standart ve şablonlu iletiler için Toplu SMS, tek numaraya tek parçalık kod için OTP SMS kullanılır.
@@ -263,4 +258,3 @@ Netgsm'in iki SMS API'si var. Yeni olan v3, token almak için şifrenin bir JSON
 - Netgsm dokümanı (REST v2): <https://www.netgsm.com.tr/dokuman/>
 - Netgsm SMS API v3 dokümanı: <https://api-docs.netgsm.com.tr/>
 - [Tasarım kararları](DESIGN.md)
-- [Netgsm logosunun resmî kaynağı](https://cdn.netgsm.com.tr/images/logos/netgsm/dark/netgsm-logo.svg)
