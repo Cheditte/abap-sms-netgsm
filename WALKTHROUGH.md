@@ -130,7 +130,7 @@ Select **STATS – Statistics of a job**. Enter **one Netgsm job ID** returned w
 
 In this example, the sender is **FIRMA** and the message says “Test belgesi hazırlandı.” (The test document is ready.) Netgsm appends `B021` to messages sent with an alphabetic sender name. The image is an illustration. The test account had no approved sender name, so delivery to a phone remains unverified.
 
-<img src="docs/img/temsili-sms.webp" width="520" alt="Illustrative incoming SMS from FIRMA. The message says the test document is ready and ends with B021.">
+<img src="docs/img/recipient-sms.webp" width="400" alt="Illustrative incoming SMS from FIRMA. The message says the test document is ready and ends with B021.">
 
 ### 7. Application log (optional)
 
