@@ -162,7 +162,7 @@ Testte örnek `123` iş numarası için Netgsm `60` döndürdü. Bu kod, iptal e
 
 Örnekte alıcı, **FIRMA** başlığı altında “Test belgesi hazırlandı.” mesajını görür. `B021`, Netgsm’in harfli gönderici adıyla yollanan SMS’e eklediği koddur. Aşağıdaki görsel temsili olarak üretildi. Test hesabında onaylı gönderici adı olmadığı için telefona teslim doğrulanamadı.
 
-<img src="docs/img/temsili-sms.webp" width="520" alt="Temsili SMS. FIRMA adlı göndericiden gelen mesaj örneği: Test belgesi hazırlandı. B021">
+<img src="docs/img/recipient-sms.webp" width="400" alt="Temsili SMS. FIRMA adlı göndericiden gelen mesaj örneği: Test belgesi hazırlandı. B021">
 
 ### 7. Uygulama günlüğü (isteğe bağlı)
 
