@@ -36,1257 +36,1778 @@
 *& declarations, no constructor expressions, no string templates.
 *& Lines stay within 72 columns for the classic editor.
 *&---------------------------------------------------------------------*
-REPORT zche_sms_netgsm LINE-SIZE 255.
+REPORT ZCHE_SMS_NETGSM LINE-SIZE 255.
 
-TYPE-POOLS: abap, vrm.
-
+TYPE-POOLS: ABAP, VRM.
 
 *----------------------------------------------------------------------*
 * Types and constants
 *----------------------------------------------------------------------*
-INTERFACE lif_sms.
+INTERFACE LIF_SMS.
 
-  CONSTANTS version TYPE string VALUE `0.2.0`.
-  CONSTANTS default_destination TYPE rfcdest VALUE 'ZCHE_NETGSM'.
+  CONSTANTS VERSION TYPE STRING VALUE `0.2.0`.
+  CONSTANTS DEFAULT_DESTINATION TYPE RFCDEST VALUE 'ZCHE_NETGSM'.
   " Netgsm serves templates from another host
-  CONSTANTS default_ext_destination TYPE rfcdest
+  CONSTANTS DEFAULT_EXT_DESTINATION TYPE RFCDEST
             VALUE 'ZCHE_NETGSM_EXT'.
-  CONSTANTS api_path TYPE string VALUE `/sms/rest/v2`.
+  CONSTANTS API_PATH TYPE STRING VALUE `/sms/rest/v2`.
 
   " Recipients per call; Netgsm documents no limit for v2, so we
   " stay small
-  CONSTANTS max_recipients TYPE i VALUE 100.
+  CONSTANTS MAX_RECIPIENTS TYPE I VALUE 100.
   " Netgsm: at most 6 parts (segments) per SMS
-  CONSTANTS max_parts TYPE i VALUE 6.
+  CONSTANTS MAX_PARTS TYPE I VALUE 6.
   " Netgsm: at most 50 job IDs per report query
-  CONSTANTS max_jobids TYPE i VALUE 50.
+  CONSTANTS MAX_JOBIDS TYPE I VALUE 50.
   " Netgsm: report range at most 3 months, inbox range 30 days
-  CONSTANTS max_report_days TYPE i VALUE 92.
-  CONSTANTS max_inbox_days TYPE i VALUE 30.
+  CONSTANTS MAX_REPORT_DAYS TYPE I VALUE 92.
+  CONSTANTS MAX_INBOX_DAYS TYPE I VALUE 30.
   " Netgsm sends its times in Turkish time, UTC+3 all year
-  CONSTANTS turkey_offset_seconds TYPE i VALUE 10800.
+  CONSTANTS TURKEY_OFFSET_SECONDS TYPE I VALUE 10800.
 
-  TYPES ty_encoding TYPE c LENGTH 7.
+  TYPES TY_ENCODING TYPE C LENGTH 7.
   " Character set: AUTO, TR and UNICODE are what you ask for, ASCII
   " turns Turkish letters into Latin ones first. GSM is the plain
   " GSM alphabet, chosen by AUTO when the text needs nothing else.
   CONSTANTS:
-    BEGIN OF encoding,
-      auto    TYPE ty_encoding VALUE 'AUTO',
-      gsm     TYPE ty_encoding VALUE 'GSM',
-      turkish TYPE ty_encoding VALUE 'TR',
-      unicode TYPE ty_encoding VALUE 'UNICODE',
-      ascii   TYPE ty_encoding VALUE 'ASCII',
-    END OF encoding.
+    BEGIN OF ENCODING,
+      AUTO    TYPE TY_ENCODING VALUE 'AUTO',
+      GSM     TYPE TY_ENCODING VALUE 'GSM',
+      TURKISH TYPE TY_ENCODING VALUE 'TR',
+      UNICODE TYPE TY_ENCODING VALUE 'UNICODE',
+      ASCII   TYPE TY_ENCODING VALUE 'ASCII',
+    END OF ENCODING.
 
-  TYPES ty_iys TYPE c LENGTH 2.
+  TYPES TY_IYS TYPE C LENGTH 2.
   " Netgsm iysfilter: 0 informational, 11 commercial to individuals,
   " 12 commercial to merchants
   CONSTANTS:
-    BEGIN OF iys,
-      info       TYPE ty_iys VALUE '0',
-      individual TYPE ty_iys VALUE '11',
-      merchant   TYPE ty_iys VALUE '12',
-    END OF iys.
+    BEGIN OF IYS,
+      INFO       TYPE TY_IYS VALUE '0',
+      INDIVIDUAL TYPE TY_IYS VALUE '11',
+      MERCHANT   TYPE TY_IYS VALUE '12',
+    END OF IYS.
 
   " What is done; Netgsm's codes mean different things per service
-  TYPES ty_action TYPE c LENGTH 8.
+  TYPES TY_ACTION TYPE C LENGTH 8.
   CONSTANTS:
-    BEGIN OF action,
-      send      TYPE ty_action VALUE 'SEND',
-      otp       TYPE ty_action VALUE 'OTP',
-      template  TYPE ty_action VALUE 'TEMPLATE',
-      cancel    TYPE ty_action VALUE 'CANCEL',
-      report    TYPE ty_action VALUE 'REPORT',
-      stats     TYPE ty_action VALUE 'STATS',
-      inbox     TYPE ty_action VALUE 'INBOX',
-      headers   TYPE ty_action VALUE 'HEADERS',
-      templates TYPE ty_action VALUE 'TPLLIST',
-      length    TYPE ty_action VALUE 'LENGTH',
-    END OF action.
+    BEGIN OF ACTION,
+      SEND      TYPE TY_ACTION VALUE 'SEND',
+      OTP       TYPE TY_ACTION VALUE 'OTP',
+      TEMPLATE  TYPE TY_ACTION VALUE 'TEMPLATE',
+      CANCEL    TYPE TY_ACTION VALUE 'CANCEL',
+      REPORT    TYPE TY_ACTION VALUE 'REPORT',
+      STATS     TYPE TY_ACTION VALUE 'STATS',
+      INBOX     TYPE TY_ACTION VALUE 'INBOX',
+      HEADERS   TYPE TY_ACTION VALUE 'HEADERS',
+      TEMPLATES TYPE TY_ACTION VALUE 'TPLLIST',
+      LENGTH    TYPE TY_ACTION VALUE 'LENGTH',
+    END OF ACTION.
 
   " Result codes. Netgsm's own codes are two or three digits
   " ('00' = accepted); these are the program's own.
   CONSTANTS:
-    BEGIN OF code,
-      ok         TYPE string VALUE `00`,
-      dry_run    TYPE string VALUE `DRY_RUN`,
-      bad_input  TYPE string VALUE `BAD_INPUT`,
-      bad_number TYPE string VALUE `BAD_NUMBER`,
-      bad_text   TYPE string VALUE `BAD_TEXT`,
-      no_dest    TYPE string VALUE `NO_DEST`,
-      no_auth    TYPE string VALUE `NO_AUTH`,
-      no_conn    TYPE string VALUE `NO_CONN`,
-      no_trust   TYPE string VALUE `NO_TRUST`,
-      http       TYPE string VALUE `HTTP_ERROR`,
-      bad_reply  TYPE string VALUE `BAD_REPLY`,
-    END OF code.
+    BEGIN OF CODE,
+      OK         TYPE STRING VALUE `00`,
+      DRY_RUN    TYPE STRING VALUE `DRY_RUN`,
+      BAD_INPUT  TYPE STRING VALUE `BAD_INPUT`,
+      BAD_NUMBER TYPE STRING VALUE `BAD_NUMBER`,
+      BAD_TEXT   TYPE STRING VALUE `BAD_TEXT`,
+      NO_DEST    TYPE STRING VALUE `NO_DEST`,
+      NO_AUTH    TYPE STRING VALUE `NO_AUTH`,
+      NO_CONN    TYPE STRING VALUE `NO_CONN`,
+      NO_TRUST   TYPE STRING VALUE `NO_TRUST`,
+      HTTP       TYPE STRING VALUE `HTTP_ERROR`,
+      BAD_REPLY  TYPE STRING VALUE `BAD_REPLY`,
+    END OF CODE.
 
   " When to send, in Turkish time; an initial date means now
   TYPES:
-    BEGIN OF ty_schedule,
-      start_date TYPE d,
-      start_time TYPE t,
-      stop_date  TYPE d,
-      stop_time  TYPE t,
-    END OF ty_schedule.
+    BEGIN OF TY_SCHEDULE,
+      START_DATE TYPE D,
+      START_TIME TYPE T,
+      STOP_DATE  TYPE D,
+      STOP_TIME  TYPE T,
+    END OF TY_SCHEDULE.
 
   " A template value: name as in ${name}, and the value
   TYPES:
-    BEGIN OF ty_param,
-      name  TYPE string,
-      value TYPE string,
-    END OF ty_param,
-    ty_params TYPE STANDARD TABLE OF ty_param WITH DEFAULT KEY.
+    BEGIN OF TY_PARAM,
+      NAME  TYPE STRING,
+      VALUE TYPE STRING,
+    END OF TY_PARAM,
+    TY_PARAMS TYPE STANDARD TABLE OF TY_PARAM WITH DEFAULT KEY.
 
   " One number as given and what became of it
   TYPES:
-    BEGIN OF ty_recipient,
-      input  TYPE string,
-      number TYPE string,
-      masked TYPE string,
-      ok     TYPE abap_bool,
-      reason TYPE string,
-    END OF ty_recipient,
-    ty_recipients TYPE STANDARD TABLE OF ty_recipient
+    BEGIN OF TY_RECIPIENT,
+      INPUT  TYPE STRING,
+      NUMBER TYPE STRING,
+      MASKED TYPE STRING,
+      OK     TYPE ABAP_BOOL,
+      REASON TYPE STRING,
+    END OF TY_RECIPIENT,
+    TY_RECIPIENTS TYPE STANDARD TABLE OF TY_RECIPIENT
                   WITH DEFAULT KEY.
 
   " The text as it will be sent, and its size
   TYPES:
-    BEGIN OF ty_text_info,
-      text      TYPE string,
-      encoding  TYPE ty_encoding,
-      units     TYPE i,
-      max_units TYPE i,
-      suffix    TYPE i,
-      parts     TYPE i,
-      ok        TYPE abap_bool,
-      message   TYPE string,
-    END OF ty_text_info.
+    BEGIN OF TY_TEXT_INFO,
+      TEXT      TYPE STRING,
+      ENCODING  TYPE TY_ENCODING,
+      UNITS     TYPE I,
+      MAX_UNITS TYPE I,
+      SUFFIX    TYPE I,
+      PARTS     TYPE I,
+      OK        TYPE ABAP_BOOL,
+      MESSAGE   TYPE STRING,
+    END OF TY_TEXT_INFO.
 
   TYPES:
-    BEGIN OF ty_result,
-      action      TYPE ty_action,
-      code        TYPE string,
-      message     TYPE string,
-      sent        TYPE abap_bool,
-      jobid       TYPE string,
-      description TYPE string,
-      header      TYPE string,
-      iys         TYPE ty_iys,
-      recipients  TYPE ty_recipients,
-      valid       TYPE i,
-      text_info   TYPE ty_text_info,
-      template_id TYPE i,
-      schedule    TYPE ty_schedule,
-      reference   TYPE string,
+    BEGIN OF TY_RESULT,
+      ACTION      TYPE TY_ACTION,
+      CODE        TYPE STRING,
+      MESSAGE     TYPE STRING,
+      SENT        TYPE ABAP_BOOL,
+      JOBID       TYPE STRING,
+      DESCRIPTION TYPE STRING,
+      HEADER      TYPE STRING,
+      IYS         TYPE TY_IYS,
+      RECIPIENTS  TYPE TY_RECIPIENTS,
+      VALID       TYPE I,
+      TEXT_INFO   TYPE TY_TEXT_INFO,
+      TEMPLATE_ID TYPE I,
+      SCHEDULE    TYPE TY_SCHEDULE,
+      REFERENCE   TYPE STRING,
       " Request body with masked numbers, for the preview
-      request     TYPE string,
-      http_status TYPE i,
-    END OF ty_result.
+      REQUEST     TYPE STRING,
+      HTTP_STATUS TYPE I,
+    END OF TY_RESULT.
 
   " Code and text of a call that returns nothing else (cancel)
   TYPES:
-    BEGIN OF ty_answer,
-      code    TYPE string,
-      message TYPE string,
-      jobid   TYPE string,
-    END OF ty_answer.
+    BEGIN OF TY_ANSWER,
+      CODE    TYPE STRING,
+      MESSAGE TYPE STRING,
+      JOBID   TYPE STRING,
+    END OF TY_ANSWER.
 
   TYPES:
-    BEGIN OF ty_report_line,
-      jobid       TYPE string,
-      number      TYPE string,
-      status      TYPE string,
-      status_text TYPE string,
-      operator    TYPE string,
-      error_code  TYPE string,
-      error_text  TYPE string,
-      delivered   TYPE string,
-      msglen      TYPE string,
-      reference   TYPE string,
-    END OF ty_report_line,
-    ty_report_lines TYPE STANDARD TABLE OF ty_report_line
+    BEGIN OF TY_REPORT_LINE,
+      JOBID       TYPE STRING,
+      NUMBER      TYPE STRING,
+      STATUS      TYPE STRING,
+      STATUS_TEXT TYPE STRING,
+      OPERATOR    TYPE STRING,
+      ERROR_CODE  TYPE STRING,
+      ERROR_TEXT  TYPE STRING,
+      DELIVERED   TYPE STRING,
+      MSGLEN      TYPE STRING,
+      REFERENCE   TYPE STRING,
+    END OF TY_REPORT_LINE,
+    TY_REPORT_LINES TYPE STANDARD TABLE OF TY_REPORT_LINE
                     WITH DEFAULT KEY,
-    BEGIN OF ty_report,
-      code    TYPE string,
-      message TYPE string,
-      lines   TYPE ty_report_lines,
-    END OF ty_report.
+    BEGIN OF TY_REPORT,
+      CODE    TYPE STRING,
+      MESSAGE TYPE STRING,
+      LINES   TYPE TY_REPORT_LINES,
+    END OF TY_REPORT.
 
   TYPES:
-    BEGIN OF ty_stats_line,
-      status      TYPE string,
-      status_text TYPE string,
-      total_sms   TYPE string,
-      total_parts TYPE string,
-      charge      TYPE string,
-      statement   TYPE string,
-      domestic    TYPE string,
-    END OF ty_stats_line,
-    ty_stats_lines TYPE STANDARD TABLE OF ty_stats_line
+    BEGIN OF TY_STATS_LINE,
+      STATUS      TYPE STRING,
+      STATUS_TEXT TYPE STRING,
+      TOTAL_SMS   TYPE STRING,
+      TOTAL_PARTS TYPE STRING,
+      CHARGE      TYPE STRING,
+      STATEMENT   TYPE STRING,
+      DOMESTIC    TYPE STRING,
+    END OF TY_STATS_LINE,
+    TY_STATS_LINES TYPE STANDARD TABLE OF TY_STATS_LINE
                    WITH DEFAULT KEY,
-    BEGIN OF ty_stats,
-      code    TYPE string,
-      message TYPE string,
-      lines   TYPE ty_stats_lines,
-    END OF ty_stats.
+    BEGIN OF TY_STATS,
+      CODE    TYPE STRING,
+      MESSAGE TYPE STRING,
+      LINES   TYPE TY_STATS_LINES,
+    END OF TY_STATS.
 
   TYPES:
-    BEGIN OF ty_inbox_line,
-      id       TYPE string,
-      jobid    TYPE string,
-      received TYPE string,
-      sender   TYPE string,
-      operator TYPE string,
-      text     TYPE string,
-    END OF ty_inbox_line,
-    ty_inbox_lines TYPE STANDARD TABLE OF ty_inbox_line
+    BEGIN OF TY_INBOX_LINE,
+      ID       TYPE STRING,
+      JOBID    TYPE STRING,
+      RECEIVED TYPE STRING,
+      SENDER   TYPE STRING,
+      OPERATOR TYPE STRING,
+      TEXT     TYPE STRING,
+    END OF TY_INBOX_LINE,
+    TY_INBOX_LINES TYPE STANDARD TABLE OF TY_INBOX_LINE
                    WITH DEFAULT KEY,
-    BEGIN OF ty_inbox,
-      code    TYPE string,
-      message TYPE string,
-      lines   TYPE ty_inbox_lines,
-    END OF ty_inbox.
+    BEGIN OF TY_INBOX,
+      CODE    TYPE STRING,
+      MESSAGE TYPE STRING,
+      LINES   TYPE TY_INBOX_LINES,
+    END OF TY_INBOX.
 
   TYPES:
-    BEGIN OF ty_headers,
-      code    TYPE string,
-      message TYPE string,
-      names   TYPE string_table,
-    END OF ty_headers.
+    BEGIN OF TY_HEADERS,
+      CODE    TYPE STRING,
+      MESSAGE TYPE STRING,
+      NAMES   TYPE STRING_TABLE,
+    END OF TY_HEADERS.
 
   TYPES:
-    BEGIN OF ty_template,
-      id          TYPE string,
-      type        TYPE string,
-      description TYPE string,
-      content     TYPE string,
+    BEGIN OF TY_TEMPLATE,
+      ID          TYPE STRING,
+      TYPE        TYPE STRING,
+      DESCRIPTION TYPE STRING,
+      CONTENT     TYPE STRING,
       " name (TYPE, max. length), ...
-      parameters  TYPE string,
-      public      TYPE string,
-      registered  TYPE string,
-    END OF ty_template,
-    ty_template_lines TYPE STANDARD TABLE OF ty_template
+      PARAMETERS  TYPE STRING,
+      PUBLIC      TYPE STRING,
+      REGISTERED  TYPE STRING,
+    END OF TY_TEMPLATE,
+    TY_TEMPLATE_LINES TYPE STANDARD TABLE OF TY_TEMPLATE
                       WITH DEFAULT KEY,
-    BEGIN OF ty_templates,
-      code     TYPE string,
-      message  TYPE string,
-      lines    TYPE ty_template_lines,
-      page     TYPE string,
-      pages    TYPE string,
-      total    TYPE string,
-    END OF ty_templates.
+    BEGIN OF TY_TEMPLATES,
+      CODE     TYPE STRING,
+      MESSAGE  TYPE STRING,
+      LINES    TYPE TY_TEMPLATE_LINES,
+      PAGE     TYPE STRING,
+      PAGES    TYPE STRING,
+      TOTAL    TYPE STRING,
+    END OF TY_TEMPLATES.
 
   " Netgsm's own count of a text
   TYPES:
-    BEGIN OF ty_length,
-      code       TYPE string,
-      message    TYPE string,
-      parts      TYPE string,
-      used       TYPE string,
-      left       TYPE string,
-      left_part  TYPE string,
-      encoding   TYPE ty_encoding,
-    END OF ty_length.
+    BEGIN OF TY_LENGTH,
+      CODE       TYPE STRING,
+      MESSAGE    TYPE STRING,
+      PARTS      TYPE STRING,
+      USED       TYPE STRING,
+      LEFT       TYPE STRING,
+      LEFT_PART  TYPE STRING,
+      ENCODING   TYPE TY_ENCODING,
+    END OF TY_LENGTH.
 
   TYPES:
-    BEGIN OF ty_http,
-      status TYPE i,
-      reason TYPE string,
-      body   TYPE string,
-    END OF ty_http.
+    BEGIN OF TY_HTTP,
+      STATUS TYPE I,
+      REASON TYPE STRING,
+      BODY   TYPE STRING,
+    END OF TY_HTTP.
 
 ENDINTERFACE.
-
-
-
 
 *----------------------------------------------------------------------*
 * Error inside the program; callers get a result code instead
 *----------------------------------------------------------------------*
-CLASS lcx_sms DEFINITION INHERITING FROM cx_static_check FINAL.
+CLASS LCX_SMS DEFINITION INHERITING FROM CX_STATIC_CHECK FINAL.
   PUBLIC SECTION.
-    DATA code TYPE string READ-ONLY.
-    DATA text TYPE string READ-ONLY.
+    DATA CODE TYPE STRING READ-ONLY.
+    DATA TEXT TYPE STRING READ-ONLY.
 
-    METHODS constructor
+    METHODS CONSTRUCTOR
       IMPORTING
-        code     TYPE string OPTIONAL
-        text     TYPE string OPTIONAL
-        previous TYPE REF TO cx_root OPTIONAL.
+        CODE     TYPE STRING OPTIONAL
+        TEXT     TYPE STRING OPTIONAL
+        PREVIOUS TYPE REF TO CX_ROOT OPTIONAL.
 
-    METHODS if_message~get_text REDEFINITION.
+    METHODS IF_MESSAGE~GET_TEXT REDEFINITION.
 ENDCLASS.
 
+CLASS LCX_SMS IMPLEMENTATION.
 
-CLASS lcx_sms IMPLEMENTATION.
+  METHOD CONSTRUCTOR.
 
-  METHOD constructor.
-    super->constructor( previous = previous ).
-    me->code = code.
-    me->text = text.
+    SUPER->CONSTRUCTOR( PREVIOUS = PREVIOUS ).
+    ME->CODE = CODE.
+    ME->TEXT = TEXT.
+
   ENDMETHOD.
 
+  METHOD IF_MESSAGE~GET_TEXT.
 
-  METHOD if_message~get_text.
-    result = text.
-    IF result IS INITIAL.
-      result = super->if_message~get_text( ).
+    RESULT = TEXT.
+    IF RESULT IS INITIAL.
+
+      RESULT = SUPER->IF_MESSAGE~GET_TEXT( ).
+
     ENDIF.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Texts in English and Turkish (logon language TR = Turkish). Set in
 * code because a copy/paste installation carries no text elements.
 *----------------------------------------------------------------------*
-CLASS lcl_text DEFINITION FINAL.
+CLASS LCL_TEXT DEFINITION FINAL.
   PUBLIC SECTION.
-    CLASS-METHODS get
+    CLASS-METHODS GET
       IMPORTING
-        iv_key         TYPE csequence
-        iv_1           TYPE csequence OPTIONAL
-        iv_2           TYPE csequence OPTIONAL
-        iv_3           TYPE csequence OPTIONAL
+        IV_KEY         TYPE CSEQUENCE
+        IV_1           TYPE CSEQUENCE OPTIONAL
+        IV_2           TYPE CSEQUENCE OPTIONAL
+        IV_3           TYPE CSEQUENCE OPTIONAL
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS pick
+    CLASS-METHODS PICK
       IMPORTING
-        iv_en          TYPE csequence
-        iv_tr          TYPE csequence
+        IV_EN          TYPE CSEQUENCE
+        IV_TR          TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
   PRIVATE SECTION.
-    CLASS-METHODS lookup
+    CLASS-METHODS LOOKUP
       IMPORTING
-        iv_key         TYPE csequence
+        IV_KEY         TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_TEXT IMPLEMENTATION.
 
-CLASS lcl_text IMPLEMENTATION.
+  METHOD GET.
 
-  METHOD get.
-    DATA lv_value TYPE string.
+    DATA LV_VALUE TYPE STRING.
 
-    rv_text = lookup( iv_key ).
-    lv_value = iv_1.
-    REPLACE ALL OCCURRENCES OF '&1' IN rv_text WITH lv_value.
-    lv_value = iv_2.
-    REPLACE ALL OCCURRENCES OF '&2' IN rv_text WITH lv_value.
-    lv_value = iv_3.
-    REPLACE ALL OCCURRENCES OF '&3' IN rv_text WITH lv_value.
+    RV_TEXT = LOOKUP( IV_KEY ).
+    LV_VALUE = IV_1.
+    REPLACE ALL OCCURRENCES OF '&1' IN RV_TEXT WITH LV_VALUE.
+    LV_VALUE = IV_2.
+    REPLACE ALL OCCURRENCES OF '&2' IN RV_TEXT WITH LV_VALUE.
+    LV_VALUE = IV_3.
+    REPLACE ALL OCCURRENCES OF '&3' IN RV_TEXT WITH LV_VALUE.
+
   ENDMETHOD.
 
+  METHOD PICK.
 
-  METHOD pick.
-    IF sy-langu = 'T'.
-      rv_text = iv_tr.
+    IF SY-LANGU EQ 'T'.
+
+      RV_TEXT = IV_TR.
+
     ELSE.
-      rv_text = iv_en.
+
+      RV_TEXT = IV_EN.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD LOOKUP.
 
-  METHOD lookup.
-    DATA lv_en TYPE string.
-    DATA lv_tr TYPE string.
+    DATA: LV_EN TYPE STRING,
+          LV_TR TYPE STRING.
 
-    CASE iv_key.
+    CASE IV_KEY.
+
 *     Numbers
+
       WHEN 'NUM_CHARS'.
-        lv_en = `contains characters other than digits`.
-        lv_tr = `rakam dışında karakter var`.
+
+        LV_EN = `contains characters other than digits`.
+        LV_TR = `rakam dışında karakter var`.
+
       WHEN 'NUM_FOREIGN'.
-        lv_en = `not a Turkish number (only +90 is supported)`.
-        lv_tr = `Türkiye numarası değil (yalnızca +90)`.
+
+        LV_EN = `not a Turkish number (only +90 is supported)`.
+        LV_TR = `Türkiye numarası değil (yalnızca +90)`.
+
       WHEN 'NUM_LENGTH'.
-        lv_en = `wrong number of digits`.
-        lv_tr = `hane sayısı yanlış`.
+
+        LV_EN = `wrong number of digits`.
+        LV_TR = `hane sayısı yanlış`.
+
       WHEN 'NUM_MOBILE'.
-        lv_en = `not a mobile number (must start with 5)`.
-        lv_tr = `cep numarası değil (5 ile başlamalı)`.
+
+        LV_EN = `not a mobile number (must start with 5)`.
+        LV_TR = `cep numarası değil (5 ile başlamalı)`.
+
       WHEN 'NUM_DUP'.
-        lv_en = `given twice; sent once`.
-        lv_tr = `iki kez verilmiş; bir kez gönderilir`.
+
+        LV_EN = `given twice; sent once`.
+        LV_TR = `iki kez verilmiş; bir kez gönderilir`.
+
       WHEN 'NO_NUMBERS'.
-        lv_en = `No valid mobile number.`.
-        lv_tr = `Geçerli cep numarası yok.`.
+
+        LV_EN = `No valid mobile number.`.
+        LV_TR = `Geçerli cep numarası yok.`.
+
       WHEN 'TOO_MANY'.
-        lv_en = `At most &1 numbers per call.`.
-        lv_tr = `Bir çağrıda en fazla &1 numara olabilir.`.
+
+        LV_EN = `At most &1 numbers per call.`.
+        LV_TR = `Bir çağrıda en fazla &1 numara olabilir.`.
 *     Header and text
+
       WHEN 'NO_HEADER'.
+
         CONCATENATE `Enter the sender name (header) exactly as it`
-                    ` is approved in the Netgsm panel.` INTO lv_en.
+                    ` is approved in the Netgsm panel.`
+          INTO LV_EN.
         CONCATENATE `Gönderici adını (başlık) Netgsm panelinde`
-                    ` onaylandığı gibi girin.` INTO lv_tr.
+                    ` onaylandığı gibi girin.`
+          INTO LV_TR.
+
       WHEN 'HEADER_LEN'.
-        lv_en = `The sender name must have 3 to 11 characters.`.
-        lv_tr = `Gönderici adı 3 ile 11 karakter olmalı.`.
+
+        LV_EN = `The sender name must have 3 to 11 characters.`.
+        LV_TR = `Gönderici adı 3 ile 11 karakter olmalı.`.
+
       WHEN 'NO_TEXT'.
-        lv_en = `The message text is empty.`.
-        lv_tr = `Mesaj metni boş.`.
+
+        LV_EN = `The message text is empty.`.
+        LV_TR = `Mesaj metni boş.`.
+
       WHEN 'TOO_LONG'.
+
         CONCATENATE `The text counts &1 characters; with this`
                     ` character set at most &2 fit into 6 parts.`
-                    INTO lv_en.
+          INTO LV_EN.
         CONCATENATE `Metin &1 karakter sayılıyor; bu karakter`
                     ` setiyle 6 parçaya en fazla &2 sığar.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'TR_UNICODE'.
+
         CONCATENATE `The text has characters that the Turkish`
                     ` character set cannot send (for example`
-                    ` emoji). Choose Unicode.` INTO lv_en.
+                    ` emoji). Choose Unicode.`
+          INTO LV_EN.
         CONCATENATE `Metinde Türkçe karakter setinin gönderemediği`
                     ` karakterler var (ör. emoji). Unicode seçin.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'BAD_ENC'.
-        lv_en = `Unknown character set &1.`.
-        lv_tr = `Bilinmeyen karakter seti &1.`.
+
+        LV_EN = `Unknown character set &1.`.
+        LV_TR = `Bilinmeyen karakter seti &1.`.
+
       WHEN 'BAD_IYS'.
-        lv_en = `Unknown IYS value &1; use 0, 11 or 12.`.
-        lv_tr = `Bilinmeyen İYS değeri &1; 0, 11 ya da 12 olmalı.`.
+
+        LV_EN = `Unknown IYS value &1; use 0, 11 or 12.`.
+        LV_TR = `Bilinmeyen İYS değeri &1; 0, 11 ya da 12 olmalı.`.
 *     Destination and authorization
+
       WHEN 'NO_DEST'.
+
         CONCATENATE `SM59 destination &1 does not exist. Create it`
                     ` as type G (HTTP connection to external`
                     ` server), host api.netgsm.com.tr, port 443,`
-                    ` SSL active.` INTO lv_en.
+                    ` SSL active.`
+          INTO LV_EN.
         CONCATENATE `SM59 hedefi &1 yok. G tipinde (dış sunucuya`
                     ` HTTP bağlantısı) oluşturun: host`
                     ` api.netgsm.com.tr, port 443, SSL aktif.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'DEST_TYPE'.
-        lv_en = `SM59 destination &1 has type &2; it must be G.`.
-        lv_tr = `SM59 hedefi &1 &2 tipinde; G olmalı.`.
+
+        LV_EN = `SM59 destination &1 has type &2; it must be G.`.
+        LV_TR = `SM59 hedefi &1 &2 tipinde; G olmalı.`.
+
       WHEN 'NO_AUTH'.
+
         CONCATENATE `You may not use SM59 destination &1`
                     ` (authorization object S_ICF, ICF_FIELD DEST,`
-                    ` ICF_VALUE &1).` INTO lv_en.
+                    ` ICF_VALUE &1).`
+          INTO LV_EN.
         CONCATENATE `SM59 hedefi &1 için yetkiniz yok (yetki`
                     ` nesnesi S_ICF, ICF_FIELD DEST, ICF_VALUE &1).`
-                    INTO lv_tr.
+          INTO LV_TR.
 *     Sending
+
       WHEN 'DRY_RUN'.
-        lv_en = `Preview only: nothing was sent to Netgsm.`.
-        lv_tr = `Yalnızca önizleme: Netgsm'e hiçbir şey gitmedi.`.
+
+        LV_EN = `Preview only: nothing was sent to Netgsm.`.
+        LV_TR = `Yalnızca önizleme: Netgsm'e hiçbir şey gitmedi.`.
+
       WHEN 'NO_CONN'.
-        lv_en = `No answer from Netgsm: &1`.
-        lv_tr = `Netgsm'den cevap gelmedi: &1`.
+
+        LV_EN = `No answer from Netgsm: &1`.
+        LV_TR = `Netgsm'den cevap gelmedi: &1`.
+
       WHEN 'UNSURE'.
+
         CONCATENATE `The SMS may or may not have been sent: check`
                     ` the delivery report or the Netgsm panel`
-                    ` before you send again.` INTO lv_en.
+                    ` before you send again.`
+          INTO LV_EN.
         CONCATENATE `SMS gitmiş de olabilir, gitmemiş de: tekrar`
                     ` göndermeden önce teslim raporuna ya da Netgsm`
-                    ` paneline bakın.` INTO lv_tr.
+                    ` paneline bakın.`
+          INTO LV_TR.
+
       WHEN 'NO_TRUST'.
+
         CONCATENATE `SAP does not trust the certificate of`
                     ` *.netgsm.com.tr, so nothing was sent. In`
                     ` STRUST, add the root certificate "USERTrust`
                     ` RSA Certification Authority" to the SSL client`
                     ` PSE of the destination (usually SSL client`
-                    ` Anonymous).` INTO lv_en.
+                    ` Anonymous).`
+          INTO LV_EN.
         CONCATENATE `SAP *.netgsm.com.tr sertifikasına güvenmiyor,`
                     ` bu yüzden hiçbir şey gitmedi. STRUST'ta`
                     ` "USERTrust RSA Certification Authority" kök`
                     ` sertifikasını hedefin SSL istemci PSE'sine`
                     ` (genellikle SSL client Anonymous) ekleyin.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'HTTP'.
-        lv_en = `Netgsm answered with HTTP &1 &2.`.
-        lv_tr = `Netgsm HTTP &1 &2 ile cevap verdi.`.
+
+        LV_EN = `Netgsm answered with HTTP &1 &2.`.
+        LV_TR = `Netgsm HTTP &1 &2 ile cevap verdi.`.
+
       WHEN 'BAD_REPLY'.
-        lv_en = `Netgsm's answer cannot be read: &1`.
-        lv_tr = `Netgsm'in cevabı okunamadı: &1`.
+
+        LV_EN = `Netgsm's answer cannot be read: &1`.
+        LV_TR = `Netgsm'in cevabı okunamadı: &1`.
+
       WHEN 'OTP_REPLY'.
-        lv_en = `Netgsm returned an unreadable OTP response.`.
-        lv_tr = `Netgsm OTP yanıtı okunamadı.`.
+
+        LV_EN = `Netgsm returned an unreadable OTP response.`.
+        LV_TR = `Netgsm OTP yanıtı okunamadı.`.
+
       WHEN 'OTP_CONN'.
-        lv_en = `No response to the OTP request.`.
-        lv_tr = `OTP isteğine yanıt alınamadı.`.
+
+        LV_EN = `No response to the OTP request.`.
+        LV_TR = `OTP isteğine yanıt alınamadı.`.
 *     Netgsm codes. The same code can mean different things in
 *     different services: <SERVICE>_<code> first, then C<code>.
+
       WHEN 'C00'.
-        lv_en = `Netgsm accepted the message.`.
-        lv_tr = `Netgsm mesajı kabul etti.`.
+
+        LV_EN = `Netgsm accepted the message.`.
+        LV_TR = `Netgsm mesajı kabul etti.`.
+
       WHEN 'C00_OK'.
-        lv_en = `Netgsm answered: OK.`.
-        lv_tr = `Netgsm cevabı: tamam.`.
+
+        LV_EN = `Netgsm answered: OK.`.
+        LV_TR = `Netgsm cevabı: tamam.`.
+
       WHEN 'C01' OR 'C02'.
-        lv_en = `Accepted; Netgsm corrected the send date.`.
-        lv_tr = `Kabul edildi; Netgsm gönderim tarihini düzeltti.`.
+
+        LV_EN = `Accepted; Netgsm corrected the send date.`.
+        LV_TR = `Kabul edildi; Netgsm gönderim tarihini düzeltti.`.
+
       WHEN 'C20'.
+
         CONCATENATE `Problem in the message text, or the text is`
-                    ` longer than allowed.` INTO lv_en.
+                    ` longer than allowed.`
+          INTO LV_EN.
         CONCATENATE `Mesaj metninde sorun var ya da metin izin`
-                    ` verilenden uzun.` INTO lv_tr.
+                    ` verilenden uzun.`
+          INTO LV_TR.
+
       WHEN 'C30'.
+
         CONCATENATE `Wrong user code or password, no API access`
                     ` for the sub-user, or the IP address of SAP is`
                     ` not allowed (Netgsm panel: API IP access).`
-                    INTO lv_en.
+          INTO LV_EN.
         CONCATENATE `Kullanıcı kodu ya da şifre yanlış, alt`
                     ` kullanıcının API erişimi yok ya da SAP'nin IP`
                     ` adresine izin verilmemiş (Netgsm paneli: API`
-                    ` IP erişim yönetimi).` INTO lv_tr.
+                    ` IP erişim yönetimi).`
+          INTO LV_TR.
+
       WHEN 'C40'.
+
         CONCATENATE `This sender name (header) is not defined on`
-                    ` your Netgsm account.` INTO lv_en.
+                    ` your Netgsm account.`
+          INTO LV_EN.
         CONCATENATE `Bu gönderici adı (başlık) Netgsm hesabınızda`
-                    ` tanımlı değil.` INTO lv_tr.
+                    ` tanımlı değil.`
+          INTO LV_TR.
+
       WHEN 'C50'.
-        lv_en = `Your account cannot send IYS-checked messages.`.
-        lv_tr = `Hesabınız İYS kontrollü gönderim yapamıyor.`.
+
+        LV_EN = `Your account cannot send IYS-checked messages.`.
+        LV_TR = `Hesabınız İYS kontrollü gönderim yapamıyor.`.
+
       WHEN 'C51'.
-        lv_en = `No IYS brand code is defined for your account.`.
-        lv_tr = `Hesabınızda İYS marka kodu tanımlı değil.`.
+
+        LV_EN = `No IYS brand code is defined for your account.`.
+        LV_TR = `Hesabınızda İYS marka kodu tanımlı değil.`.
+
       WHEN 'C70'.
-        lv_en = `Invalid or missing parameter.`.
-        lv_tr = `Hatalı ya da eksik parametre.`.
+
+        LV_EN = `Invalid or missing parameter.`.
+        LV_TR = `Hatalı ya da eksik parametre.`.
+
       WHEN 'C80'.
-        lv_en = `Sending limit exceeded.`.
-        lv_tr = `Gönderim sınırı aşıldı.`.
+
+        LV_EN = `Sending limit exceeded.`.
+        LV_TR = `Gönderim sınırı aşıldı.`.
+
       WHEN 'C85'.
+
         CONCATENATE `More than 20 jobs to the same number within`
-                    ` one minute.` INTO lv_en.
+                    ` one minute.`
+          INTO LV_EN.
         CONCATENATE `Aynı numaraya bir dakikada 20'den fazla iş`
-                    ` oluşturulamaz.` INTO lv_tr.
+                    ` oluşturulamaz.`
+          INTO LV_TR.
+
       WHEN 'C100'.
-        lv_en = `Netgsm system error (&1).`.
-        lv_tr = `Netgsm sistem hatası (&1).`.
+
+        LV_EN = `Netgsm system error (&1).`.
+        LV_TR = `Netgsm sistem hatası (&1).`.
+
       WHEN 'OTP_20'.
+
         CONCATENATE `Problem in the text, or it is too long: an OTP`
                     ` SMS is one part without Turkish letters, at`
                     ` most 155 characters with a sender name that`
-                    ` has letters.` INTO lv_en.
+                    ` has letters.`
+          INTO LV_EN.
         CONCATENATE `Metinde sorun var ya da metin uzun: OTP SMS`
                     ` Türkçe harf içermeyen tek parçadır, harfli`
                     ` gönderici adıyla en fazla 155 karakter.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'OTP_50'.
+
         CONCATENATE `Check the number: OTP SMS go only to Turkish`
-                    ` mobile numbers.` INTO lv_en.
+                    ` mobile numbers.`
+          INTO LV_EN.
         CONCATENATE `Numarayı kontrol edin: OTP SMS yalnızca`
-                    ` Türkiye cep numaralarına gider.` INTO lv_tr.
+                    ` Türkiye cep numaralarına gider.`
+          INTO LV_TR.
+
       WHEN 'OTP_60'.
-        lv_en = `No OTP SMS package on your Netgsm account.`.
-        lv_tr = `Netgsm hesabınızda OTP SMS paketi tanımlı değil.`.
+
+        LV_EN = `No OTP SMS package on your Netgsm account.`.
+        LV_TR = `Netgsm hesabınızda OTP SMS paketi tanımlı değil.`.
+
       WHEN 'TPL_UNAUTHORIZED'.
-        lv_en = `Your account may not use this template.`.
-        lv_tr = `Hesabınız bu şablonu kullanamıyor.`.
+
+        LV_EN = `Your account may not use this template.`.
+        LV_TR = `Hesabınız bu şablonu kullanamıyor.`.
+
       WHEN 'TPL_NOT_FOUND'.
-        lv_en = `There is no template with this ID.`.
-        lv_tr = `Bu numarada bir şablon yok.`.
+
+        LV_EN = `There is no template with this ID.`.
+        LV_TR = `Bu numarada bir şablon yok.`.
+
       WHEN 'TPL_BAD_REQUEST'.
-        lv_en = `Values are missing for this template.`.
-        lv_tr = `Bu şablon için eksik değer var.`.
+
+        LV_EN = `Values are missing for this template.`.
+        LV_TR = `Bu şablon için eksik değer var.`.
+
       WHEN 'CANCEL_00'.
-        lv_en = `The scheduled SMS was cancelled.`.
-        lv_tr = `İleri tarihli SMS iptal edildi.`.
+
+        LV_EN = `The scheduled SMS was cancelled.`.
+        LV_TR = `İleri tarihli SMS iptal edildi.`.
+
       WHEN 'CANCEL_60'.
-        lv_en = `There is no job with this ID.`.
-        lv_tr = `Bu numarada bir iş yok.`.
+
+        LV_EN = `There is no job with this ID.`.
+        LV_TR = `Bu numarada bir iş yok.`.
+
       WHEN 'REPORT_60'.
-        lv_en = `No records for these criteria (yet).`.
-        lv_tr = `Bu kriterlere uyan kayıt (henüz) yok.`.
+
+        LV_EN = `No records for these criteria (yet).`.
+        LV_TR = `Bu kriterlere uyan kayıt (henüz) yok.`.
+
       WHEN 'REPORT_70'.
+
         CONCATENATE `Invalid or missing parameter, or the date`
-                    ` range is longer than 3 months.` INTO lv_en.
+                    ` range is longer than 3 months.`
+          INTO LV_EN.
         CONCATENATE `Hatalı ya da eksik parametre ya da tarih`
-                    ` aralığı 3 aydan uzun.` INTO lv_tr.
+                    ` aralığı 3 aydan uzun.`
+          INTO LV_TR.
+
       WHEN 'REPORT_80'.
+
         CONCATENATE `Query limit: each job ID once a minute, 60`
-                    ` queries a minute.` INTO lv_en.
+                    ` queries a minute.`
+          INTO LV_EN.
         CONCATENATE `Sorgu sınırı: her iş numarası dakikada bir`
-                    ` kez, dakikada en fazla 60 sorgu.` INTO lv_tr.
+                    ` kez, dakikada en fazla 60 sorgu.`
+          INTO LV_TR.
+
       WHEN 'INBOX_40'.
+
         CONCATENATE `No messages. Without a date range each`
-                    ` message is listed only once.` INTO lv_en.
+                    ` message is listed only once.`
+          INTO LV_EN.
         CONCATENATE `Mesaj yok. Tarih aralığı verilmezse her mesaj`
-                    ` yalnızca bir kez listelenir.` INTO lv_tr.
+                    ` yalnızca bir kez listelenir.`
+          INTO LV_TR.
+
       WHEN 'INBOX_50'.
-        lv_en = `Wrong date format.`.
-        lv_tr = `Tarih biçimi hatalı.`.
+
+        LV_EN = `Wrong date format.`.
+        LV_TR = `Tarih biçimi hatalı.`.
+
       WHEN 'INBOX_60'.
-        lv_en = `The date range is longer than 30 days.`.
-        lv_tr = `Tarih aralığı 30 günden uzun.`.
+
+        LV_EN = `The date range is longer than 30 days.`.
+        LV_TR = `Tarih aralığı 30 günden uzun.`.
+
       WHEN 'C_OTHER'.
-        lv_en = `Netgsm code &1 &2`.
-        lv_tr = `Netgsm kodu &1 &2`.
+
+        LV_EN = `Netgsm code &1 &2`.
+        LV_TR = `Netgsm kodu &1 &2`.
 *     Delivery status per number (report)
+
       WHEN 'S0'.
-        lv_en = `waiting`.
-        lv_tr = `iletilmeyi bekliyor`.
+
+        LV_EN = `waiting`.
+        LV_TR = `iletilmeyi bekliyor`.
+
       WHEN 'S1'.
-        lv_en = `delivered`.
-        lv_tr = `iletildi`.
+
+        LV_EN = `delivered`.
+        LV_TR = `iletildi`.
+
       WHEN 'S2'.
-        lv_en = `timed out`.
-        lv_tr = `zaman aşımı`.
+
+        LV_EN = `timed out`.
+        LV_TR = `zaman aşımı`.
+
       WHEN 'S3'.
-        lv_en = `wrong or restricted number`.
-        lv_tr = `hatalı ya da kısıtlı numara`.
+
+        LV_EN = `wrong or restricted number`.
+        LV_TR = `hatalı ya da kısıtlı numara`.
+
       WHEN 'S4'.
-        lv_en = `not sent to the operator`.
-        lv_tr = `operatöre gönderilemedi`.
+
+        LV_EN = `not sent to the operator`.
+        LV_TR = `operatöre gönderilemedi`.
+
       WHEN 'S11'.
-        lv_en = `rejected by the operator`.
-        lv_tr = `operatör kabul etmedi`.
+
+        LV_EN = `rejected by the operator`.
+        LV_TR = `operatör kabul etmedi`.
+
       WHEN 'S12'.
-        lv_en = `send error`.
-        lv_tr = `gönderim hatası`.
+
+        LV_EN = `send error`.
+        LV_TR = `gönderim hatası`.
+
       WHEN 'S13'.
-        lv_en = `duplicate`.
-        lv_tr = `mükerrer gönderim`.
+
+        LV_EN = `duplicate`.
+        LV_TR = `mükerrer gönderim`.
+
       WHEN 'S14'.
-        lv_en = `not enough credit`.
-        lv_tr = `yetersiz kredi`.
+
+        LV_EN = `not enough credit`.
+        LV_TR = `yetersiz kredi`.
+
       WHEN 'S15'.
-        lv_en = `number is blacklisted`.
-        lv_tr = `numara kara listede`.
+
+        LV_EN = `number is blacklisted`.
+        LV_TR = `numara kara listede`.
+
       WHEN 'S16'.
-        lv_en = `rejected by IYS`.
-        lv_tr = `İYS reddetti`.
+
+        LV_EN = `rejected by IYS`.
+        LV_TR = `İYS reddetti`.
+
       WHEN 'S17'.
-        lv_en = `IYS error`.
-        lv_tr = `İYS hatası`.
+
+        LV_EN = `IYS error`.
+        LV_TR = `İYS hatası`.
+
       WHEN 'S22'.
-        lv_en = `no permission for international SMS`.
-        lv_tr = `yurt dışı gönderim izni yok`.
+
+        LV_EN = `no permission for international SMS`.
+        LV_TR = `yurt dışı gönderim izni yok`.
 *     Operator error codes (report)
+
       WHEN 'E101'.
-        lv_en = `mailbox full`.
-        lv_tr = `mesaj kutusu dolu`.
+
+        LV_EN = `mailbox full`.
+        LV_TR = `mesaj kutusu dolu`.
+
       WHEN 'E102'.
-        lv_en = `phone off or out of coverage`.
-        lv_tr = `telefon kapalı ya da kapsama dışında`.
+
+        LV_EN = `phone off or out of coverage`.
+        LV_TR = `telefon kapalı ya da kapsama dışında`.
+
       WHEN 'E103'.
-        lv_en = `line busy`.
-        lv_tr = `hat meşgul`.
+
+        LV_EN = `line busy`.
+        LV_TR = `hat meşgul`.
+
       WHEN 'E104'.
-        lv_en = `line not active`.
-        lv_tr = `hat aktif değil`.
+
+        LV_EN = `line not active`.
+        LV_TR = `hat aktif değil`.
+
       WHEN 'E105'.
-        lv_en = `wrong number`.
-        lv_tr = `hatalı numara`.
+
+        LV_EN = `wrong number`.
+        LV_TR = `hatalı numara`.
+
       WHEN 'E106'.
-        lv_en = `blacklisted`.
-        lv_tr = `kara listede`.
+
+        LV_EN = `blacklisted`.
+        LV_TR = `kara listede`.
+
       WHEN 'E111'.
-        lv_en = `timed out`.
-        lv_tr = `zaman aşımı`.
+
+        LV_EN = `timed out`.
+        LV_TR = `zaman aşımı`.
+
       WHEN 'E112'.
-        lv_en = `phone does not accept SMS`.
-        lv_tr = `cihaz SMS almaya kapalı`.
+
+        LV_EN = `phone does not accept SMS`.
+        LV_TR = `cihaz SMS almaya kapalı`.
+
       WHEN 'E113'.
-        lv_en = `phone does not support it`.
-        lv_tr = `cihaz desteklemiyor`.
+
+        LV_EN = `phone does not support it`.
+        LV_TR = `cihaz desteklemiyor`.
+
       WHEN 'E114'.
-        lv_en = `forwarding failed`.
-        lv_tr = `yönlendirme başarısız`.
+
+        LV_EN = `forwarding failed`.
+        LV_TR = `yönlendirme başarısız`.
+
       WHEN 'E115'.
-        lv_en = `timeout at the operator of the number`.
-        lv_tr = `hedef operatörde zaman aşımı`.
+
+        LV_EN = `timeout at the operator of the number`.
+        LV_TR = `hedef operatörde zaman aşımı`.
+
       WHEN 'E116'.
-        lv_en = `unknown subscriber`.
-        lv_tr = `tanımlanamayan abone`.
+
+        LV_EN = `unknown subscriber`.
+        LV_TR = `tanımlanamayan abone`.
+
       WHEN 'E117'.
-        lv_en = `illegal subscriber`.
-        lv_tr = `yasa dışı abone`.
+
+        LV_EN = `illegal subscriber`.
+        LV_TR = `yasa dışı abone`.
+
       WHEN 'E119'.
-        lv_en = `system error`.
-        lv_tr = `sistemsel hata`.
+
+        LV_EN = `system error`.
+        LV_TR = `sistemsel hata`.
+
       WHEN 'E_OTHER'.
-        lv_en = `operator or system error &1`.
-        lv_tr = `operatör ya da sistem hatası &1`.
+
+        LV_EN = `operator or system error &1`.
+        LV_TR = `operatör ya da sistem hatası &1`.
+
       WHEN 'NO_JOBS'.
-        lv_en = `Enter at least one Netgsm job ID.`.
-        lv_tr = `En az bir Netgsm iş numarası (jobid) girin.`.
+
+        LV_EN = `Enter at least one Netgsm job ID.`.
+        LV_TR = `En az bir Netgsm iş numarası (jobid) girin.`.
+
       WHEN 'TOO_MANY_JOBS'.
-        lv_en = `At most &1 job IDs per query.`.
-        lv_tr = `Bir sorguda en fazla &1 iş numarası olabilir.`.
+
+        LV_EN = `At most &1 job IDs per query.`.
+        LV_TR = `Bir sorguda en fazla &1 iş numarası olabilir.`.
 *     Application log
+
       WHEN 'LOG_SAVED'.
-        lv_en = `Saved in the application log (SLG1, object &1).`.
-        lv_tr = `Uygulama günlüğüne yazıldı (SLG1, nesne &1).`.
+
+        LV_EN = `Saved in the application log (SLG1, object &1).`.
+        LV_TR = `Uygulama günlüğüne yazıldı (SLG1, nesne &1).`.
+
       WHEN 'LOG_NONE'.
+
         CONCATENATE `Application log object &1 is not defined`
                     ` (SLG0); the result is only in this list and`
-                    ` in the job log.` INTO lv_en.
+                    ` in the job log.`
+          INTO LV_EN.
         CONCATENATE `Uygulama günlüğü nesnesi &1 tanımlı değil`
                     ` (SLG0); sonuç yalnızca bu listede ve job`
-                    ` günlüğünde.` INTO lv_tr.
+                    ` günlüğünde.`
+          INTO LV_TR.
+
       WHEN 'LOG_SUMMARY'.
-        lv_en = `Header &1, character set &2, &3 part(s)`.
-        lv_tr = `Başlık &1, karakter seti &2, &3 parça`.
+
+        LV_EN = `Header &1, character set &2, &3 part(s)`.
+        LV_TR = `Başlık &1, karakter seti &2, &3 parça`.
+
       WHEN 'LOG_TEXT'.
-        lv_en = `Text: &1`.
-        lv_tr = `Metin: &1`.
+
+        LV_EN = `Text: &1`.
+        LV_TR = `Metin: &1`.
 *     Screen
+
       WHEN 'T_MSG'.
-        lv_en = `Message`.
-        lv_tr = `Mesaj`.
+
+        LV_EN = `Message`.
+        LV_TR = `Mesaj`.
+
       WHEN 'T_RUN'.
-        lv_en = `What to do`.
-        lv_tr = `Ne yapılacak`.
+
+        LV_EN = `What to do`.
+        LV_TR = `Ne yapılacak`.
+
       WHEN 'C_TXT'.
-        lv_en = `Each filled line becomes one line of the SMS`.
-        lv_tr = `Her dolu satır SMS'te bir satır olur`.
+
+        LV_EN = `Each filled line becomes one line of the SMS`.
+        LV_TR = `Her dolu satır SMS'te bir satır olur`.
+
       WHEN 'S_NO'.
-        lv_en = `Mobile numbers`.
-        lv_tr = `Cep numaraları`.
+
+        LV_EN = `Mobile numbers`.
+        LV_TR = `Cep numaraları`.
+
       WHEN 'P_HEAD'.
-        lv_en = `Sender name (header)`.
-        lv_tr = `Gönderici adı (başlık)`.
+
+        LV_EN = `Sender name (header)`.
+        LV_TR = `Gönderici adı (başlık)`.
+
       WHEN 'P_TXT1'.
-        lv_en = `Text, line 1`.
-        lv_tr = `Metin, 1. satır`.
+
+        LV_EN = `Text, line 1`.
+        LV_TR = `Metin, 1. satır`.
+
       WHEN 'P_TXT2'.
-        lv_en = `Text, line 2`.
-        lv_tr = `Metin, 2. satır`.
+
+        LV_EN = `Text, line 2`.
+        LV_TR = `Metin, 2. satır`.
+
       WHEN 'P_TXT3'.
-        lv_en = `Text, line 3`.
-        lv_tr = `Metin, 3. satır`.
+
+        LV_EN = `Text, line 3`.
+        LV_TR = `Metin, 3. satır`.
+
       WHEN 'P_TXT4'.
-        lv_en = `Text, line 4`.
-        lv_tr = `Metin, 4. satır`.
+
+        LV_EN = `Text, line 4`.
+        LV_TR = `Metin, 4. satır`.
+
       WHEN 'P_ENC'.
-        lv_en = `Character set`.
-        lv_tr = `Karakter seti`.
+
+        LV_EN = `Character set`.
+        LV_TR = `Karakter seti`.
+
       WHEN 'P_IYS'.
-        lv_en = `Message type (IYS)`.
-        lv_tr = `İleti tipi (İYS)`.
+
+        LV_EN = `Message type (IYS)`.
+        LV_TR = `İleti tipi (İYS)`.
+
       WHEN 'P_DRY'.
-        lv_en = `Preview only, send nothing`.
-        lv_tr = `Yalnızca önizleme, gönderme`.
+
+        LV_EN = `Preview only, send nothing`.
+        LV_TR = `Yalnızca önizleme, gönderme`.
+
       WHEN 'P_LOGTX'.
-        lv_en = `Also log the message text`.
-        lv_tr = `Mesaj metnini de günlüğe yaz`.
+
+        LV_EN = `Also log the message text`.
+        LV_TR = `Mesaj metnini de günlüğe yaz`.
+
       WHEN 'S_JOB'.
-        lv_en = `Netgsm job IDs`.
-        lv_tr = `Netgsm iş numaraları`.
+
+        LV_EN = `Netgsm job IDs`.
+        LV_TR = `Netgsm iş numaraları`.
+
       WHEN 'P_DEST'.
-        lv_en = `SM59 destination`.
-        lv_tr = `SM59 hedefi`.
+
+        LV_EN = `SM59 destination`.
+        LV_TR = `SM59 hedefi`.
+
       WHEN 'ENC_AUTO'.
-        lv_en = `Automatic (Turkish only when needed)`.
-        lv_tr = `Otomatik (gerekirse Türkçe)`.
+
+        LV_EN = `Automatic (Turkish only when needed)`.
+        LV_TR = `Otomatik (gerekirse Türkçe)`.
+
       WHEN 'ENC_TR'.
-        lv_en = `Turkish characters (TR)`.
-        lv_tr = `Türkçe karakterli (TR)`.
+
+        LV_EN = `Turkish characters (TR)`.
+        LV_TR = `Türkçe karakterli (TR)`.
+
       WHEN 'ENC_UNICODE'.
-        lv_en = `Unicode (for example emoji)`.
-        lv_tr = `Unicode (ör. emoji)`.
+
+        LV_EN = `Unicode (for example emoji)`.
+        LV_TR = `Unicode (ör. emoji)`.
+
       WHEN 'ENC_ASCII'.
-        lv_en = `Turkish letters to Latin (c, g, s...)`.
-        lv_tr = `Türkçe harfleri sadeleştir (c, g, s...)`.
+
+        LV_EN = `Turkish letters to Latin (c, g, s...)`.
+        LV_TR = `Türkçe harfleri sadeleştir (c, g, s...)`.
+
       WHEN 'IYS_0'.
-        lv_en = `Informational (no IYS check)`.
-        lv_tr = `Bilgilendirme (İYS kontrolü yok)`.
+
+        LV_EN = `Informational (no IYS check)`.
+        LV_TR = `Bilgilendirme (İYS kontrolü yok)`.
+
       WHEN 'IYS_11'.
-        lv_en = `Commercial, to individuals`.
-        lv_tr = `Ticari, bireysel alıcı`.
+
+        LV_EN = `Commercial, to individuals`.
+        LV_TR = `Ticari, bireysel alıcı`.
+
       WHEN 'IYS_12'.
-        lv_en = `Commercial, to merchants`.
-        lv_tr = `Ticari, tacir alıcı`.
+
+        LV_EN = `Commercial, to merchants`.
+        LV_TR = `Ticari, tacir alıcı`.
 *     List and popup
+
       WHEN 'L_PREVIEW'.
-        lv_en = `PREVIEW - nothing sent`.
-        lv_tr = `ÖNİZLEME - hiçbir şey gönderilmedi`.
+
+        LV_EN = `PREVIEW - nothing sent`.
+        LV_TR = `ÖNİZLEME - hiçbir şey gönderilmedi`.
+
       WHEN 'L_SENT'.
-        lv_en = `SENT to Netgsm`.
-        lv_tr = `Netgsm'e GÖNDERİLDİ`.
+
+        LV_EN = `SENT to Netgsm`.
+        LV_TR = `Netgsm'e GÖNDERİLDİ`.
+
       WHEN 'L_NOT_SENT'.
-        lv_en = `NOT SENT`.
-        lv_tr = `GÖNDERİLMEDİ`.
+
+        LV_EN = `NOT SENT`.
+        LV_TR = `GÖNDERİLMEDİ`.
+
       WHEN 'L_RESULT'.
-        lv_en = `Result`.
-        lv_tr = `Sonuç`.
+
+        LV_EN = `Result`.
+        LV_TR = `Sonuç`.
+
       WHEN 'L_JOBID'.
-        lv_en = `Job ID`.
-        lv_tr = `İş numarası`.
+
+        LV_EN = `Job ID`.
+        LV_TR = `İş numarası`.
+
       WHEN 'L_HEADER'.
-        lv_en = `Sender name`.
-        lv_tr = `Gönderici adı`.
+
+        LV_EN = `Sender name`.
+        LV_TR = `Gönderici adı`.
+
       WHEN 'L_ENC'.
-        lv_en = `Character set`.
-        lv_tr = `Karakter seti`.
+
+        LV_EN = `Character set`.
+        LV_TR = `Karakter seti`.
+
       WHEN 'L_SIZE'.
-        lv_en = `&1 of &2 characters, &3 part(s)`.
-        lv_tr = `&1 / &2 karakter, &3 parça`.
+
+        LV_EN = `&1 of &2 characters, &3 part(s)`.
+        LV_TR = `&1 / &2 karakter, &3 parça`.
+
       WHEN 'L_SUFFIX'.
+
         CONCATENATE `(includes the 5 characters Netgsm adds to`
-                    ` an alphanumeric sender name)` INTO lv_en.
+                    ` an alphanumeric sender name)`
+          INTO LV_EN.
         CONCATENATE `(Netgsm'in harfli gönderici adına eklediği`
-                    ` 5 karakter dahil)` INTO lv_tr.
+                    ` 5 karakter dahil)`
+          INTO LV_TR.
+
       WHEN 'L_RCPT'.
-        lv_en = `Recipients: &1 valid, &2 rejected`.
-        lv_tr = `Alıcılar: &1 geçerli, &2 reddedildi`.
+
+        LV_EN = `Recipients: &1 valid, &2 rejected`.
+        LV_TR = `Alıcılar: &1 geçerli, &2 reddedildi`.
+
       WHEN 'L_CREDITS'.
-        lv_en = `About &1 SMS credit(s)`.
-        lv_tr = `Yaklaşık &1 SMS kredisi`.
+
+        LV_EN = `About &1 SMS credit(s)`.
+        LV_TR = `Yaklaşık &1 SMS kredisi`.
+
       WHEN 'L_TEXT'.
-        lv_en = `Text as it will be sent`.
-        lv_tr = `Gönderilecek metin`.
+
+        LV_EN = `Text as it will be sent`.
+        LV_TR = `Gönderilecek metin`.
+
       WHEN 'L_REQUEST'.
-        lv_en = `Request to Netgsm (numbers masked)`.
-        lv_tr = `Netgsm'e gidecek istek (numaralar maskeli)`.
+
+        LV_EN = `Request to Netgsm (numbers masked)`.
+        LV_TR = `Netgsm'e gidecek istek (numaralar maskeli)`.
+
       WHEN 'L_REPORT'.
-        lv_en = `Delivery report`.
-        lv_tr = `Teslim raporu`.
+
+        LV_EN = `Delivery report`.
+        LV_TR = `Teslim raporu`.
+
       WHEN 'L_REPORT_COLS'.
+
         CONCATENATE `Job ID                      Number`
-                    `          Status / error` INTO lv_en.
+                    `          Status / error`
+          INTO LV_EN.
         CONCATENATE `İş numarası                 Numara`
-                    `          Durum / hata` INTO lv_tr.
+                    `          Durum / hata`
+          INTO LV_TR.
+
       WHEN 'L_HEADERS'.
-        lv_en = `Sender names on the Netgsm account`.
-        lv_tr = `Netgsm hesabındaki gönderici adları`.
+
+        LV_EN = `Sender names on the Netgsm account`.
+        LV_TR = `Netgsm hesabındaki gönderici adları`.
+
       WHEN 'L_CONN_OK'.
-        lv_en = `Connection and logon to Netgsm work.`.
-        lv_tr = `Netgsm bağlantısı ve girişi çalışıyor.`.
+
+        LV_EN = `Connection and logon to Netgsm work.`.
+        LV_TR = `Netgsm bağlantısı ve girişi çalışıyor.`.
+
       WHEN 'POP_TITLE'.
-        lv_en = `Send SMS for real`.
-        lv_tr = `Gerçek SMS gönderimi`.
+
+        LV_EN = `Send SMS for real`.
+        LV_TR = `Gerçek SMS gönderimi`.
+
       WHEN 'POP_QUESTION'.
+
         CONCATENATE `Send the SMS to &1 number(s) through Netgsm,`
                     ` about &2 SMS credit(s)? This costs money.`
-                    INTO lv_en.
+          INTO LV_EN.
         CONCATENATE `SMS Netgsm üzerinden &1 numaraya gönderilsin`
                     ` mi (yaklaşık &2 SMS kredisi)? Ücretlidir.`
-                    INTO lv_tr.
+          INTO LV_TR.
+
       WHEN 'CANCELLED'.
-        lv_en = `Cancelled; nothing was sent.`.
-        lv_tr = `İptal edildi; hiçbir şey gönderilmedi.`.
+
+        LV_EN = `Cancelled; nothing was sent.`.
+        LV_TR = `İptal edildi; hiçbir şey gönderilmedi.`.
+
       WHEN 'IGNORED'.
-        lv_en = `Only single numbers are used; &1 entries ignored.`.
-        lv_tr = `Yalnızca tek numaralar alınır; &1 giriş atlandı.`.
+
+        LV_EN = `Only single numbers are used; &1 entries ignored.`.
+        LV_TR = `Yalnızca tek numaralar alınır; &1 giriş atlandı.`.
 *     Version 0.2: actions, schedule, templates, OTP, lists
+
       WHEN 'OTP_ONE'.
-        lv_en = `An OTP SMS goes to exactly one number.`.
-        lv_tr = `OTP SMS tam olarak bir numaraya gider.`.
+
+        LV_EN = `An OTP SMS goes to exactly one number.`.
+        LV_TR = `OTP SMS tam olarak bir numaraya gider.`.
+
       WHEN 'OTP_CHARS'.
+
         CONCATENATE `An OTP SMS cannot contain "&1": no Turkish`
                     ` letters, no emoji. Choose the character set`
-                    ` "Turkish letters to Latin".` INTO lv_en.
+                    ` "Turkish letters to Latin".`
+          INTO LV_EN.
         CONCATENATE `OTP SMS "&1" içeremez: Türkçe harf ve emoji`
                     ` olmaz. "Türkçe harfleri sadeleştir" karakter`
-                    ` setini seçin.` INTO lv_tr.
+                    ` setini seçin.`
+          INTO LV_TR.
+
       WHEN 'OTP_LONG'.
+
         CONCATENATE `An OTP SMS is one part: at most &2`
-                    ` characters, this text counts &1.` INTO lv_en.
+                    ` characters, this text counts &1.`
+          INTO LV_EN.
         CONCATENATE `OTP SMS tek parçadır: en fazla &2 karakter,`
-                    ` bu metin &1 karakter.` INTO lv_tr.
+                    ` bu metin &1 karakter.`
+          INTO LV_TR.
+
       WHEN 'NO_TEMPLATE'.
-        lv_en = `Enter the template ID (see "List templates").`.
-        lv_tr = `Şablon numarasını girin ("Şablonları listele").`.
+
+        LV_EN = `Enter the template ID (see "List templates").`.
+        LV_TR = `Şablon numarasını girin ("Şablonları listele").`.
+
       WHEN 'BAD_PARAM'.
-        lv_en = `Template value "&1" must look like name=value.`.
-        lv_tr = `Şablon değeri "&1" ad=değer biçiminde olmalı.`.
+
+        LV_EN = `Template value "&1" must look like name=value.`.
+        LV_TR = `Şablon değeri "&1" ad=değer biçiminde olmalı.`.
+
       WHEN 'SCHED_NO_START'.
-        lv_en = `An end time needs a send date.`.
-        lv_tr = `Son deneme zamanı için gönderim günü gerekir.`.
+
+        LV_EN = `An end time needs a send date.`.
+        LV_TR = `Son deneme zamanı için gönderim günü gerekir.`.
+
       WHEN 'SCHED_STOP'.
-        lv_en = `The end time must be after the send time.`.
+
+        LV_EN = `The end time must be after the send time.`.
         CONCATENATE `Son deneme zamanı gönderim zamanından sonra`
-                    ` olmalı.` INTO lv_tr.
+                    ` olmalı.`
+          INTO LV_TR.
+
       WHEN 'NO_JOB'.
-        lv_en = `Enter a Netgsm job ID.`.
-        lv_tr = `Bir Netgsm iş numarası (jobid) girin.`.
+
+        LV_EN = `Enter a Netgsm job ID.`.
+        LV_TR = `Bir Netgsm iş numarası (jobid) girin.`.
+
       WHEN 'NO_CRITERIA'.
-        lv_en = `Enter job IDs or a date range.`.
-        lv_tr = `İş numarası ya da tarih aralığı girin.`.
+
+        LV_EN = `Enter job IDs or a date range.`.
+        LV_TR = `İş numarası ya da tarih aralığı girin.`.
+
       WHEN 'RANGE_BOTH'.
-        lv_en = `Enter both dates of the range, or neither.`.
-        lv_tr = `Aralığın iki tarihini de girin ya da hiçbirini.`.
+
+        LV_EN = `Enter both dates of the range, or neither.`.
+        LV_TR = `Aralığın iki tarihini de girin ya da hiçbirini.`.
+
       WHEN 'RANGE_ORDER'.
-        lv_en = `The end date is before the start date.`.
-        lv_tr = `Bitiş tarihi başlangıç tarihinden önce.`.
+
+        LV_EN = `The end date is before the start date.`.
+        LV_TR = `Bitiş tarihi başlangıç tarihinden önce.`.
+
       WHEN 'RANGE_LONG'.
-        lv_en = `The date range may have at most &1 days.`.
-        lv_tr = `Tarih aralığı en fazla &1 gün olabilir.`.
+
+        LV_EN = `The date range may have at most &1 days.`.
+        LV_TR = `Tarih aralığı en fazla &1 gün olabilir.`.
+
       WHEN 'NOTHING_DONE'.
-        lv_en = `Cancelled; nothing was changed.`.
-        lv_tr = `Vazgeçildi; hiçbir şey değişmedi.`.
+
+        LV_EN = `Cancelled; nothing was changed.`.
+        LV_TR = `Vazgeçildi; hiçbir şey değişmedi.`.
+
       WHEN 'OP_60'.
-        lv_en = `Türk Telekom fixed line`.
-        lv_tr = `Türk Telekom sabit`.
+
+        LV_EN = `Türk Telekom fixed line`.
+        LV_TR = `Türk Telekom sabit`.
+
       WHEN 'OP_70'.
-        lv_en = `unknown operator`.
-        lv_tr = `tanımsız operatör`.
+
+        LV_EN = `unknown operator`.
+        LV_TR = `tanımsız operatör`.
+
       WHEN 'OP_ABROAD'.
-        lv_en = `abroad`.
-        lv_tr = `yurt dışı`.
+
+        LV_EN = `abroad`.
+        LV_TR = `yurt dışı`.
+
       WHEN 'ST_successful'.
-        lv_en = `delivered`.
-        lv_tr = `iletildi`.
+
+        LV_EN = `delivered`.
+        LV_TR = `iletildi`.
+
       WHEN 'ST_notEnoughCredit'.
-        lv_en = `not enough credit`.
-        lv_tr = `yetersiz kredi / paket`.
+
+        LV_EN = `not enough credit`.
+        LV_TR = `yetersiz kredi / paket`.
+
       WHEN 'ST_iysNotValid'.
-        lv_en = `rejected by IYS`.
-        lv_tr = `İYS reddetti`.
+
+        LV_EN = `rejected by IYS`.
+        LV_TR = `İYS reddetti`.
+
       WHEN 'ST_blacklist'.
-        lv_en = `blacklisted`.
-        lv_tr = `kara listede`.
+
+        LV_EN = `blacklisted`.
+        LV_TR = `kara listede`.
+
       WHEN 'ST_numberError'.
-        lv_en = `wrong number`.
-        lv_tr = `hatalı numara`.
+
+        LV_EN = `wrong number`.
+        LV_TR = `hatalı numara`.
+
       WHEN 'ST_sendingError'.
-        lv_en = `send error`.
-        lv_tr = `gönderim hatası`.
+
+        LV_EN = `send error`.
+        LV_TR = `gönderim hatası`.
+
       WHEN 'ST_operatorError'.
-        lv_en = `operator error`.
-        lv_tr = `operatör hatası`.
+
+        LV_EN = `operator error`.
+        LV_TR = `operatör hatası`.
+
       WHEN 'ST_operatorRefused'.
-        lv_en = `refused by the operator`.
-        lv_tr = `operatör kabul etmedi`.
+
+        LV_EN = `refused by the operator`.
+        LV_TR = `operatör kabul etmedi`.
+
       WHEN 'ST_cannotSendToOperator'.
-        lv_en = `not sent to the operator`.
-        lv_tr = `operatöre gönderilemedi`.
+
+        LV_EN = `not sent to the operator`.
+        LV_TR = `operatöre gönderilemedi`.
+
       WHEN 'ST_messageTextError'.
-        lv_en = `message length error`.
-        lv_tr = `mesaj boyu hatası`.
+
+        LV_EN = `message length error`.
+        LV_TR = `mesaj boyu hatası`.
+
       WHEN 'ST_notAccceptedByNts' OR 'ST_notAcceptedByNts'.
-        lv_en = `NTS error`.
-        lv_tr = `NTS hatası`.
+
+        LV_EN = `NTS error`.
+        LV_TR = `NTS hatası`.
+
       WHEN 'ST_waiting'.
-        lv_en = `waiting`.
-        lv_tr = `bekliyor`.
+
+        LV_EN = `waiting`.
+        LV_TR = `bekliyor`.
+
       WHEN 'ST_repeated'.
-        lv_en = `duplicate`.
-        lv_tr = `mükerrer`.
+
+        LV_EN = `duplicate`.
+        LV_TR = `mükerrer`.
+
       WHEN 'ST_refunded'.
-        lv_en = `charge refunded`.
-        lv_tr = `ücret iade edildi`.
+
+        LV_EN = `charge refunded`.
+        LV_TR = `ücret iade edildi`.
+
       WHEN 'ST_expired'.
-        lv_en = `timed out`.
-        lv_tr = `zaman aşımı`.
+
+        LV_EN = `timed out`.
+        LV_TR = `zaman aşımı`.
+
       WHEN 'T_TPL'.
-        lv_en = `Template`.
-        lv_tr = `Şablon`.
+
+        LV_EN = `Template`.
+        LV_TR = `Şablon`.
+
       WHEN 'T_SCH'.
-        lv_en = `Later send (Turkish time) and reference`.
-        lv_tr = `İleri tarihli gönderim (Türkiye saati), referans`.
+
+        LV_EN = `Later send (Turkish time) and reference`.
+        LV_TR = `İleri tarihli gönderim (Türkiye saati), referans`.
+
       WHEN 'T_JOB'.
-        lv_en = `Job IDs and dates`.
-        lv_tr = `İş numaraları ve tarihler`.
+
+        LV_EN = `Job IDs and dates`.
+        LV_TR = `İş numaraları ve tarihler`.
+
       WHEN 'T_TLS'.
-        lv_en = `Filter`.
-        lv_tr = `Filtre`.
+
+        LV_EN = `Filter`.
+        LV_TR = `Filtre`.
+
       WHEN 'T_CON'.
-        lv_en = `Connection`.
-        lv_tr = `Bağlantı`.
+
+        LV_EN = `Connection`.
+        LV_TR = `Bağlantı`.
+
       WHEN 'C_TPAR'.
-        lv_en = `Template values, one per line: name=value`.
-        lv_tr = `Şablon değerleri, her satıra bir tane: ad=değer`.
+
+        LV_EN = `Template values, one per line: name=value`.
+        LV_TR = `Şablon değerleri, her satıra bir tane: ad=değer`.
+
       WHEN 'C_JOB'.
-        lv_en = `Cancel and statistics use the first job ID`.
-        lv_tr = `İptal ve istatistik ilk iş numarasını kullanır`.
+
+        LV_EN = `Cancel and statistics use the first job ID`.
+        LV_TR = `İptal ve istatistik ilk iş numarasını kullanır`.
+
       WHEN 'C_INB'.
-        lv_en = `No dates: only new SMS, each one listed once`.
-        lv_tr = `Tarihsiz: yalnızca yeni SMS, her biri bir kez`.
+
+        LV_EN = `No dates: only new SMS, each one listed once`.
+        LV_TR = `Tarihsiz: yalnızca yeni SMS, her biri bir kez`.
+
       WHEN 'P_ACT'.
-        lv_en = `Action`.
-        lv_tr = `İşlem`.
+
+        LV_EN = `Action`.
+        LV_TR = `İşlem`.
+
       WHEN 'P_NLEN'.
-        lv_en = `Also count at Netgsm (free)`.
-        lv_tr = `Netgsm'e de saydır (ücretsiz)`.
+
+        LV_EN = `Also count at Netgsm (free)`.
+        LV_TR = `Netgsm'e de saydır (ücretsiz)`.
+
       WHEN 'P_TID'.
-        lv_en = `Template ID`.
-        lv_tr = `Şablon numarası`.
+
+        LV_EN = `Template ID`.
+        LV_TR = `Şablon numarası`.
+
       WHEN 'S_TPAR'.
-        lv_en = `Values name=value`.
-        lv_tr = `Değerler ad=değer`.
+
+        LV_EN = `Values name=value`.
+        LV_TR = `Değerler ad=değer`.
+
       WHEN 'P_SDATE'.
-        lv_en = `Send on`.
-        lv_tr = `Gönderim günü`.
+
+        LV_EN = `Send on`.
+        LV_TR = `Gönderim günü`.
+
       WHEN 'P_STIME'.
-        lv_en = `Send at`.
-        lv_tr = `Gönderim saati`.
+
+        LV_EN = `Send at`.
+        LV_TR = `Gönderim saati`.
+
       WHEN 'P_EDATE'.
-        lv_en = `Stop trying on`.
-        lv_tr = `Son deneme günü`.
+
+        LV_EN = `Stop trying on`.
+        LV_TR = `Son deneme günü`.
+
       WHEN 'P_ETIME'.
-        lv_en = `Stop trying at`.
-        lv_tr = `Son deneme saati`.
+
+        LV_EN = `Stop trying at`.
+        LV_TR = `Son deneme saati`.
+
       WHEN 'P_REF'.
-        lv_en = `Your reference (referansID)`.
-        lv_tr = `Referansınız (referansID)`.
+
+        LV_EN = `Your reference (referansID)`.
+        LV_TR = `Referansınız (referansID)`.
+
       WHEN 'P_RFROM'.
-        lv_en = `From date`.
-        lv_tr = `Başlangıç tarihi`.
+
+        LV_EN = `From date`.
+        LV_TR = `Başlangıç tarihi`.
+
       WHEN 'P_RTO'.
-        lv_en = `To date`.
-        lv_tr = `Bitiş tarihi`.
+
+        LV_EN = `To date`.
+        LV_TR = `Bitiş tarihi`.
+
       WHEN 'P_SENDD'.
-        lv_en = `Send date (older months)`.
-        lv_tr = `Gönderim tarihi (eski aylar)`.
+
+        LV_EN = `Send date (older months)`.
+        LV_TR = `Gönderim tarihi (eski aylar)`.
+
       WHEN 'P_FULL'.
-        lv_en = `Show full numbers`.
-        lv_tr = `Numaraları tam göster`.
+
+        LV_EN = `Show full numbers`.
+        LV_TR = `Numaraları tam göster`.
+
       WHEN 'P_TSRCH'.
-        lv_en = `Description contains`.
-        lv_tr = `Açıklamada geçen`.
+
+        LV_EN = `Description contains`.
+        LV_TR = `Açıklamada geçen`.
+
       WHEN 'P_TCONT'.
-        lv_en = `Text contains`.
-        lv_tr = `Metinde geçen`.
+
+        LV_EN = `Text contains`.
+        LV_TR = `Metinde geçen`.
+
       WHEN 'P_TTYPE'.
-        lv_en = `Template type`.
-        lv_tr = `Şablon tipi`.
+
+        LV_EN = `Template type`.
+        LV_TR = `Şablon tipi`.
+
       WHEN 'P_TPUB'.
-        lv_en = `Also Netgsm's own templates`.
-        lv_tr = `Netgsm'in şablonları da`.
+
+        LV_EN = `Also Netgsm's own templates`.
+        LV_TR = `Netgsm'in şablonları da`.
+
       WHEN 'P_TPAGE'.
-        lv_en = `Page (from 0)`.
-        lv_tr = `Sayfa (0'dan)`.
+
+        LV_EN = `Page (from 0)`.
+        LV_TR = `Sayfa (0'dan)`.
+
       WHEN 'P_DEXT'.
-        lv_en = `SM59 destination (templates)`.
-        lv_tr = `SM59 hedefi (şablonlar)`.
+
+        LV_EN = `SM59 destination (templates)`.
+        LV_TR = `SM59 hedefi (şablonlar)`.
+
       WHEN 'ACT_SEND'.
-        lv_en = `Send SMS`.
-        lv_tr = `SMS gönder`.
+
+        LV_EN = `Send SMS`.
+        LV_TR = `SMS gönder`.
+
       WHEN 'ACT_OTP'.
-        lv_en = `Send OTP SMS (one number)`.
-        lv_tr = `OTP SMS gönder (tek numara)`.
+
+        LV_EN = `Send OTP SMS (one number)`.
+        LV_TR = `OTP SMS gönder (tek numara)`.
+
       WHEN 'ACT_TEMPLATE'.
-        lv_en = `Send template SMS`.
-        lv_tr = `Şablonlu SMS gönder`.
+
+        LV_EN = `Send template SMS`.
+        LV_TR = `Şablonlu SMS gönder`.
+
       WHEN 'ACT_CANCEL'.
-        lv_en = `Cancel a scheduled SMS`.
-        lv_tr = `İleri tarihli SMS'i iptal et`.
+
+        LV_EN = `Cancel a scheduled SMS`.
+        LV_TR = `İleri tarihli SMS'i iptal et`.
+
       WHEN 'ACT_REPORT'.
-        lv_en = `Delivery report`.
-        lv_tr = `Teslim raporu`.
+
+        LV_EN = `Delivery report`.
+        LV_TR = `Teslim raporu`.
+
       WHEN 'ACT_STATS'.
-        lv_en = `Statistics of a job`.
-        lv_tr = `Bir işin istatistiği`.
+
+        LV_EN = `Statistics of a job`.
+        LV_TR = `Bir işin istatistiği`.
+
       WHEN 'ACT_INBOX'.
-        lv_en = `Incoming SMS`.
-        lv_tr = `Gelen SMS`.
+
+        LV_EN = `Incoming SMS`.
+        LV_TR = `Gelen SMS`.
+
       WHEN 'ACT_HEADERS'.
-        lv_en = `Test: list sender names`.
-        lv_tr = `Test: gönderici adlarını listele`.
+
+        LV_EN = `Test: list sender names`.
+        LV_TR = `Test: gönderici adlarını listele`.
+
       WHEN 'ACT_TPLLIST'.
-        lv_en = `List templates`.
-        lv_tr = `Şablonları listele`.
+
+        LV_EN = `List templates`.
+        LV_TR = `Şablonları listele`.
+
       WHEN 'ACT_LENGTH'.
-        lv_en = `Count characters at Netgsm`.
-        lv_tr = `Karakterleri Netgsm'e saydır`.
+
+        LV_EN = `Count characters at Netgsm`.
+        LV_TR = `Karakterleri Netgsm'e saydır`.
+
       WHEN 'L_STATS'.
-        lv_en = `Statistics`.
-        lv_tr = `İstatistik`.
+
+        LV_EN = `Statistics`.
+        LV_TR = `İstatistik`.
+
       WHEN 'L_STATS_LINE'.
-        lv_en = `&1 SMS, &2 part(s), charged &3`.
-        lv_tr = `&1 SMS, &2 parça, ücret &3`.
+
+        LV_EN = `&1 SMS, &2 part(s), charged &3`.
+        LV_TR = `&1 SMS, &2 parça, ücret &3`.
+
       WHEN 'L_INBOX'.
-        lv_en = `Incoming SMS`.
-        lv_tr = `Gelen SMS`.
+
+        LV_EN = `Incoming SMS`.
+        LV_TR = `Gelen SMS`.
+
       WHEN 'L_TEMPLATES'.
-        lv_en = `Templates`.
-        lv_tr = `Şablonlar`.
+
+        LV_EN = `Templates`.
+        LV_TR = `Şablonlar`.
+
       WHEN 'L_PAGE'.
-        lv_en = `Page &1 of &2 (from 0), &3 template(s)`.
-        lv_tr = `Sayfa &1 / &2 (0'dan), &3 şablon`.
+
+        LV_EN = `Page &1 of &2 (from 0), &3 template(s)`.
+        LV_TR = `Sayfa &1 / &2 (0'dan), &3 şablon`.
+
       WHEN 'L_PARAMS'.
-        lv_en = `Values: &1`.
-        lv_tr = `Değerler: &1`.
+
+        LV_EN = `Values: &1`.
+        LV_TR = `Değerler: &1`.
+
       WHEN 'L_LENGTH'.
-        lv_en = `Netgsm's count`.
-        lv_tr = `Netgsm'in hesabı`.
+
+        LV_EN = `Netgsm's count`.
+        LV_TR = `Netgsm'in hesabı`.
+
       WHEN 'L_LEN_LINE'.
+
         CONCATENATE `&1 part(s), &2 characters in the last part,`
-                    ` &3 left until the next part` INTO lv_en.
+                    ` &3 left until the next part`
+          INTO LV_EN.
         CONCATENATE `&1 parça, son parçada &2 karakter, sonraki`
-                    ` parçaya &3 karakter` INTO lv_tr.
+                    ` parçaya &3 karakter`
+          INTO LV_TR.
+
       WHEN 'L_LEN_LEFT'.
-        lv_en = `&1 characters left in 6 parts`.
-        lv_tr = `6 parçada &1 karakter yer kaldı`.
+
+        LV_EN = `&1 characters left in 6 parts`.
+        LV_TR = `6 parçada &1 karakter yer kaldı`.
+
       WHEN 'L_LOCAL'.
+
         CONCATENATE `This program's count: &1, &2 characters,`
-                    ` &3 part(s)` INTO lv_en.
-        lv_tr = `Programın hesabı: &1, &2 karakter, &3 parça`.
+                    ` &3 part(s)`
+          INTO LV_EN.
+        LV_TR = `Programın hesabı: &1, &2 karakter, &3 parça`.
+
       WHEN 'L_SCHEDULE'.
-        lv_en = `Send on &1, stop trying &2 (Turkish time)`.
-        lv_tr = `Gönderim &1, son deneme &2 (Türkiye saati)`.
+
+        LV_EN = `Send on &1, stop trying &2 (Turkish time)`.
+        LV_TR = `Gönderim &1, son deneme &2 (Türkiye saati)`.
+
       WHEN 'L_REFERENCE'.
-        lv_en = `Reference`.
-        lv_tr = `Referans`.
+
+        LV_EN = `Reference`.
+        LV_TR = `Referans`.
+
       WHEN 'POP_CANCEL_T'.
-        lv_en = `Cancel scheduled SMS`.
-        lv_tr = `İleri tarihli SMS iptali`.
+
+        LV_EN = `Cancel scheduled SMS`.
+        LV_TR = `İleri tarihli SMS iptali`.
+
       WHEN 'POP_CANCEL_Q'.
-        lv_en = `Cancel the scheduled SMS with job ID &1?`.
-        lv_tr = `&1 numaralı ileri tarihli SMS iptal edilsin mi?`.
+
+        LV_EN = `Cancel the scheduled SMS with job ID &1?`.
+        LV_TR = `&1 numaralı ileri tarihli SMS iptal edilsin mi?`.
+
       WHEN OTHERS.
-        lv_en = iv_key.
-        lv_tr = iv_key.
+
+        LV_EN = IV_KEY.
+        LV_TR = IV_KEY.
+
     ENDCASE.
-    rv_text = pick( iv_en = lv_en iv_tr = lv_tr ).
+    RV_TEXT = PICK( IV_EN = LV_EN IV_TR = LV_TR ).
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Phone numbers: +90 500 000 00 00, 0500..., 500..., 0090 500...
 * all become 5000000000, the 10-digit form Netgsm v2 asks for
 *----------------------------------------------------------------------*
-CLASS lcl_sms_phone DEFINITION FINAL.
+CLASS LCL_SMS_PHONE DEFINITION FINAL.
   PUBLIC SECTION.
-    CLASS-METHODS normalize
+    CLASS-METHODS NORMALIZE
       IMPORTING
-        iv_input            TYPE csequence
+        IV_INPUT            TYPE CSEQUENCE
       RETURNING
-        value(rs_recipient) TYPE lif_sms=>ty_recipient.
+        VALUE(RS_RECIPIENT) TYPE LIF_SMS=>TY_RECIPIENT.
 
     "! Normalizes all, skips empty entries, marks numbers given twice
-    CLASS-METHODS normalize_all
+    CLASS-METHODS NORMALIZE_ALL
       IMPORTING
-        it_inputs            TYPE string_table
+        IT_INPUTS            TYPE STRING_TABLE
       RETURNING
-        value(rt_recipients) TYPE lif_sms=>ty_recipients.
+        VALUE(RT_RECIPIENTS) TYPE LIF_SMS=>TY_RECIPIENTS.
 
     "! 5000000034 -> 5** *** ** 34
-    CLASS-METHODS mask
+    CLASS-METHODS MASK
       IMPORTING
-        iv_number        TYPE csequence
+        IV_NUMBER        TYPE CSEQUENCE
       RETURNING
-        value(rv_masked) TYPE string.
+        VALUE(RV_MASKED) TYPE STRING.
 
     "! Every digit but the last two becomes *
-    CLASS-METHODS mask_any
+    CLASS-METHODS MASK_ANY
       IMPORTING
-        iv_input         TYPE csequence
+        IV_INPUT         TYPE CSEQUENCE
       RETURNING
-        value(rv_masked) TYPE string.
+        VALUE(RV_MASKED) TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_SMS_PHONE IMPLEMENTATION.
 
-CLASS lcl_sms_phone IMPLEMENTATION.
+  METHOD NORMALIZE.
 
-  METHOD normalize.
-    DATA lv_work TYPE c LENGTH 40.
-    DATA lv_number TYPE string.
-    DATA lv_len TYPE i.
+    DATA: LV_WORK   TYPE C LENGTH 40,
+          LV_NUMBER TYPE STRING,
+          LV_LEN    TYPE I.
 
-    rs_recipient-input = iv_input.
-    lv_work = iv_input.
-    TRANSLATE lv_work USING '- . ( ) / '.
-    CONDENSE lv_work NO-GAPS.
-    IF lv_work(1) = '+'.
-      CONCATENATE '00' lv_work+1 INTO lv_work.
+    RS_RECIPIENT-INPUT = IV_INPUT.
+    LV_WORK = IV_INPUT.
+    TRANSLATE LV_WORK USING '- . ( ) / '.
+    CONDENSE LV_WORK NO-GAPS.
+    IF LV_WORK(1) EQ '+'.
+
+      CONCATENATE '00' LV_WORK+1 INTO LV_WORK.
+
     ENDIF.
-    lv_number = lv_work.
-    lv_len = strlen( lv_number ).
+    LV_NUMBER = LV_WORK.
+    LV_LEN = STRLEN( LV_NUMBER ).
 
-    IF lv_len = 0 OR NOT lv_number CO '0123456789'.
-      rs_recipient-reason = lcl_text=>get( 'NUM_CHARS' ).
-    ELSEIF lv_len >= 2 AND lv_number(2) = '00'
-       AND NOT ( lv_len >= 4 AND lv_number(4) = '0090' ).
-      rs_recipient-reason = lcl_text=>get( 'NUM_FOREIGN' ).
+    IF LV_LEN EQ 0 OR NOT LV_NUMBER CO '0123456789'.
+
+      RS_RECIPIENT-REASON = LCL_TEXT=>GET( 'NUM_CHARS' ).
+
+    ELSEIF LV_LEN GE 2 AND LV_NUMBER(2) EQ '00'
+       AND NOT ( LV_LEN GE 4 AND LV_NUMBER(4) EQ '0090' ).
+
+      RS_RECIPIENT-REASON = LCL_TEXT=>GET( 'NUM_FOREIGN' ).
+
     ELSE.
-      IF lv_len = 14 AND lv_number(4) = '0090'.
-        SHIFT lv_number LEFT BY 4 PLACES.
-      ELSEIF lv_len = 12 AND lv_number(2) = '90'.
-        SHIFT lv_number LEFT BY 2 PLACES.
-      ELSEIF lv_len = 11 AND lv_number(1) = '0'.
-        SHIFT lv_number LEFT BY 1 PLACES.
+
+      IF LV_LEN EQ 14 AND LV_NUMBER(4) EQ '0090'.
+
+        SHIFT LV_NUMBER LEFT BY 4 PLACES.
+
+      ELSEIF LV_LEN EQ 12 AND LV_NUMBER(2) EQ '90'.
+
+        SHIFT LV_NUMBER LEFT BY 2 PLACES.
+
+      ELSEIF LV_LEN EQ 11 AND LV_NUMBER(1) EQ '0'.
+
+        SHIFT LV_NUMBER LEFT BY 1 PLACES.
+
       ENDIF.
-      lv_len = strlen( lv_number ).
-      IF lv_len <> 10.
-        rs_recipient-reason = lcl_text=>get( 'NUM_LENGTH' ).
-      ELSEIF lv_number(1) <> '5'.
-        rs_recipient-reason = lcl_text=>get( 'NUM_MOBILE' ).
+      LV_LEN = STRLEN( LV_NUMBER ).
+      IF LV_LEN NE 10.
+
+        RS_RECIPIENT-REASON = LCL_TEXT=>GET( 'NUM_LENGTH' ).
+
+      ELSEIF LV_NUMBER(1) NE '5'.
+
+        RS_RECIPIENT-REASON = LCL_TEXT=>GET( 'NUM_MOBILE' ).
+
       ELSE.
-        rs_recipient-number = lv_number.
-        rs_recipient-ok = abap_true.
+
+        RS_RECIPIENT-NUMBER = LV_NUMBER.
+        RS_RECIPIENT-OK = ABAP_TRUE.
+
       ENDIF.
+
     ENDIF.
 
-    IF rs_recipient-ok = abap_true.
-      rs_recipient-masked = mask( rs_recipient-number ).
+    IF RS_RECIPIENT-OK EQ ABAP_TRUE.
+
+      RS_RECIPIENT-MASKED = MASK( RS_RECIPIENT-NUMBER ).
+
     ELSE.
-      rs_recipient-masked = mask_any( iv_input ).
+
+      RS_RECIPIENT-MASKED = MASK_ANY( IV_INPUT ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD NORMALIZE_ALL.
 
-  METHOD normalize_all.
-    DATA lv_input TYPE string.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA lt_seen TYPE SORTED TABLE OF string
-                 WITH UNIQUE KEY table_line.
+    DATA LT_SEEN TYPE SORTED TABLE OF STRING
+                 WITH UNIQUE KEY TABLE_LINE.
 
-    LOOP AT it_inputs INTO lv_input.
-      CONDENSE lv_input.
-      IF lv_input IS INITIAL.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
+
+    DATA LV_INPUT TYPE STRING.
+
+    LOOP AT IT_INPUTS INTO LV_INPUT.
+
+      CONDENSE LV_INPUT.
+      IF LV_INPUT IS INITIAL.
+
         CONTINUE.
+
       ENDIF.
-      ls_recipient = normalize( lv_input ).
-      IF ls_recipient-ok = abap_true.
-        READ TABLE lt_seen TRANSPORTING NO FIELDS
-             WITH TABLE KEY table_line = ls_recipient-number.
-        IF sy-subrc = 0.
-          ls_recipient-ok = abap_false.
-          ls_recipient-reason = lcl_text=>get( 'NUM_DUP' ).
+      LS_RECIPIENT = NORMALIZE( LV_INPUT ).
+      IF LS_RECIPIENT-OK EQ ABAP_TRUE.
+
+        READ TABLE LT_SEEN
+             TRANSPORTING NO FIELDS
+             WITH TABLE KEY TABLE_LINE = LS_RECIPIENT-NUMBER.
+        IF SY-SUBRC EQ 0.
+
+          LS_RECIPIENT-OK = ABAP_FALSE.
+          LS_RECIPIENT-REASON = LCL_TEXT=>GET( 'NUM_DUP' ).
+
         ELSE.
-          INSERT ls_recipient-number INTO TABLE lt_seen.
+
+          INSERT LS_RECIPIENT-NUMBER INTO TABLE LT_SEEN.
+
         ENDIF.
+
       ENDIF.
-      APPEND ls_recipient TO rt_recipients.
+      APPEND LS_RECIPIENT TO RT_RECIPIENTS.
+
+      CLEAR LV_INPUT.
+
     ENDLOOP.
+
+    CLEAR LV_INPUT.
+
   ENDMETHOD.
 
+  METHOD MASK.
 
-  METHOD mask.
-    DATA lv_number TYPE string.
-    DATA lv_len TYPE i.
-    DATA lv_off TYPE i.
+    DATA: LV_NUMBER TYPE STRING,
+          LV_LEN    TYPE I,
+          LV_OFF    TYPE I.
 
-    lv_number = iv_number.
-    lv_len = strlen( lv_number ).
-    IF lv_len <> 10.
-      rv_masked = mask_any( lv_number ).
+    LV_NUMBER = IV_NUMBER.
+    LV_LEN = STRLEN( LV_NUMBER ).
+    IF LV_LEN NE 10.
+
+      RV_MASKED = MASK_ANY( LV_NUMBER ).
       RETURN.
+
     ENDIF.
-    lv_off = lv_len - 2.
-    CONCATENATE lv_number(1) '** *** **' INTO rv_masked.
-    CONCATENATE rv_masked ` ` lv_number+lv_off(2) INTO rv_masked.
+    LV_OFF = LV_LEN - 2.
+    CONCATENATE LV_NUMBER(1) '** *** **' INTO RV_MASKED.
+    CONCATENATE RV_MASKED ` ` LV_NUMBER+LV_OFF(2) INTO RV_MASKED.
+
   ENDMETHOD.
 
+  METHOD MASK_ANY.
 
-  METHOD mask_any.
-    DATA lv_work TYPE c LENGTH 40.
-    DATA lv_len TYPE i.
-    DATA lv_keep TYPE i.
-    DATA lv_pos TYPE i.
+    DATA: LV_WORK TYPE C LENGTH 40,
+          LV_LEN  TYPE I,
+          LV_KEEP TYPE I,
+          LV_POS  TYPE I.
 
-    lv_work = iv_input.
-    lv_len = strlen( lv_work ).
-    lv_keep = lv_len - 2.
-    DO lv_len TIMES.
-      lv_pos = sy-index - 1.
-      IF lv_pos >= lv_keep.
+    LV_WORK = IV_INPUT.
+    LV_LEN = STRLEN( LV_WORK ).
+    LV_KEEP = LV_LEN - 2.
+    DO LV_LEN TIMES.
+
+      LV_POS = SY-INDEX - 1.
+      IF LV_POS GE LV_KEEP.
+
         EXIT.
+
       ENDIF.
-      IF lv_work+lv_pos(1) CO '0123456789'.
-        lv_work+lv_pos(1) = '*'.
+      IF LV_WORK+LV_POS(1) CO '0123456789'.
+
+        LV_WORK+LV_POS(1) = '*'.
+
       ENDIF.
+
     ENDDO.
-    rv_masked = lv_work.
+    RV_MASKED = LV_WORK.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Character set, length and parts. Netgsm, /length documentation:
@@ -1299,361 +1820,463 @@ ENDCLASS.
 * when the sender name has letters. All counted from Unicode code
 * points, so this source needs no special characters.
 *----------------------------------------------------------------------*
-CLASS lcl_sms_text DEFINITION FINAL.
+CLASS LCL_SMS_TEXT DEFINITION FINAL.
   PUBLIC SECTION.
-    TYPES ty_kind TYPE c LENGTH 1.
+    TYPES TY_KIND TYPE C LENGTH 1.
     CONSTANTS:
-      BEGIN OF kind,
-        basic     TYPE ty_kind VALUE 'B',
-        extension TYPE ty_kind VALUE 'E',
-        turkish   TYPE ty_kind VALUE 'T',
-        other     TYPE ty_kind VALUE 'U',
-      END OF kind.
+      BEGIN OF KIND,
+        BASIC     TYPE TY_KIND VALUE 'B',
+        EXTENSION TYPE TY_KIND VALUE 'E',
+        TURKISH   TYPE TY_KIND VALUE 'T',
+        OTHER     TYPE TY_KIND VALUE 'U',
+      END OF KIND.
 
-    CLASS-METHODS analyze
+    CLASS-METHODS ANALYZE
       IMPORTING
-        iv_text        TYPE csequence
-        iv_encoding    TYPE lif_sms=>ty_encoding
-        iv_header      TYPE csequence
+        IV_TEXT        TYPE CSEQUENCE
+        IV_ENCODING    TYPE LIF_SMS=>TY_ENCODING
+        IV_HEADER      TYPE CSEQUENCE
       RETURNING
-        value(rs_info) TYPE lif_sms=>ty_text_info.
+        VALUE(RS_INFO) TYPE LIF_SMS=>TY_TEXT_INFO.
 
     "! What a character costs: basic, extension, Turkish, other
-    CLASS-METHODS kind_of
+    CLASS-METHODS KIND_OF
       IMPORTING
-        iv_code_point  TYPE i
+        IV_CODE_POINT  TYPE I
       RETURNING
-        value(rv_kind) TYPE ty_kind.
+        VALUE(RV_KIND) TYPE TY_KIND.
 
     "! One of the twelve Turkish letters (c g i o s u, both cases)
-    CLASS-METHODS is_turkish_letter
+    CLASS-METHODS IS_TURKISH_LETTER
       IMPORTING
-        iv_code_point TYPE i
+        IV_CODE_POINT TYPE I
       RETURNING
-        value(rv_yes) TYPE abap_bool.
+        VALUE(RV_YES) TYPE ABAP_BOOL.
 
     "! OTP SMS rules (Netgsm): one part, plain GSM letters, no
     "! Turkish letters except o and u with umlaut
-    CLASS-METHODS check_otp
+    CLASS-METHODS CHECK_OTP
       IMPORTING
-        iv_text        TYPE csequence
-        iv_header      TYPE csequence
-        iv_ascii       TYPE abap_bool
+        IV_TEXT        TYPE CSEQUENCE
+        IV_HEADER      TYPE CSEQUENCE
+        IV_ASCII       TYPE ABAP_BOOL
       RETURNING
-        value(rs_info) TYPE lif_sms=>ty_text_info.
+        VALUE(RS_INFO) TYPE LIF_SMS=>TY_TEXT_INFO.
 
     "! Turkish letters to Latin ones; the rest stays
-    CLASS-METHODS to_ascii
+    CLASS-METHODS TO_ASCII
       IMPORTING
-        iv_text        TYPE csequence
+        IV_TEXT        TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
   PRIVATE SECTION.
-    CLASS-METHODS replace_code_point
+    CLASS-METHODS REPLACE_CODE_POINT
       IMPORTING
-        iv_code_point TYPE i
-        iv_with       TYPE c
+        IV_CODE_POINT TYPE I
+        IV_WITH       TYPE C
       CHANGING
-        cv_text       TYPE string.
+        CV_TEXT       TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_SMS_TEXT IMPLEMENTATION.
 
-CLASS lcl_sms_text IMPLEMENTATION.
+  METHOD ANALYZE.
 
-  METHOD analyze.
-    DATA lv_text TYPE string.
-    DATA lv_len TYPE i.
-    DATA lv_pos TYPE i.
-    DATA lv_char TYPE c LENGTH 1.
-    DATA lv_code_point TYPE i.
-    DATA lv_kind TYPE ty_kind.
-    DATA lv_basic TYPE i.
-    DATA lv_ext TYPE i.
-    DATA lv_tr TYPE i.
-    DATA lv_other TYPE i.
-    DATA lv_letters TYPE i.
-    DATA lv_header TYPE string.
-    DATA lv_single TYPE i.
-    DATA lv_multi TYPE i.
-    DATA lv_total TYPE i.
-    DATA lv_1 TYPE c LENGTH 12.
-    DATA lv_2 TYPE c LENGTH 12.
+    DATA: LV_TEXT       TYPE STRING,
+          LV_LEN        TYPE I,
+          LV_POS        TYPE I,
+          LV_CHAR       TYPE C LENGTH 1,
+          LV_CODE_POINT TYPE I,
+          LV_KIND       TYPE TY_KIND,
+          LV_BASIC      TYPE I,
+          LV_EXT        TYPE I,
+          LV_TR         TYPE I,
+          LV_OTHER      TYPE I,
+          LV_LETTERS    TYPE I,
+          LV_HEADER     TYPE STRING,
+          LV_SINGLE     TYPE I,
+          LV_MULTI      TYPE I,
+          LV_TOTAL      TYPE I,
+          LV_1          TYPE C LENGTH 12,
+          LV_2          TYPE C LENGTH 12.
 
-    lv_text = iv_text.
-    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf
-            IN lv_text WITH cl_abap_char_utilities=>newline.
+    LV_TEXT = IV_TEXT.
+    REPLACE ALL OCCURRENCES OF CL_ABAP_CHAR_UTILITIES=>CR_LF
+            IN LV_TEXT WITH CL_ABAP_CHAR_UTILITIES=>NEWLINE.
 
-    CASE iv_encoding.
-      WHEN lif_sms=>encoding-auto OR lif_sms=>encoding-turkish
-        OR lif_sms=>encoding-unicode.
-      WHEN lif_sms=>encoding-ascii.
-        lv_text = to_ascii( lv_text ).
+    CASE IV_ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-AUTO OR LIF_SMS=>ENCODING-TURKISH
+        OR LIF_SMS=>ENCODING-UNICODE.
+
+      WHEN LIF_SMS=>ENCODING-ASCII.
+
+        LV_TEXT = TO_ASCII( LV_TEXT ).
+
       WHEN OTHERS.
-        rs_info-message = lcl_text=>get( iv_key = 'BAD_ENC'
-                                         iv_1   = iv_encoding ).
-        RETURN.
-    ENDCASE.
-    rs_info-text = lv_text.
 
-    lv_len = strlen( lv_text ).
-    IF lv_len = 0.
-      rs_info-message = lcl_text=>get( 'NO_TEXT' ).
+        RS_INFO-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'BAD_ENC'
+                                         IV_1   = IV_ENCODING ).
+        RETURN.
+
+    ENDCASE.
+    RS_INFO-TEXT = LV_TEXT.
+
+    LV_LEN = STRLEN( LV_TEXT ).
+    IF LV_LEN EQ 0.
+
+      RS_INFO-MESSAGE = LCL_TEXT=>GET( 'NO_TEXT' ).
       RETURN.
+
     ENDIF.
 
-    DO lv_len TIMES.
-      lv_pos = sy-index - 1.
-      lv_char = lv_text+lv_pos(1).
+    DO LV_LEN TIMES.
+
+      LV_POS = SY-INDEX - 1.
+      LV_CHAR = LV_TEXT+LV_POS(1).
       TRY.
-          lv_code_point = cl_abap_conv_out_ce=>uccpi( lv_char ).
-        CATCH cx_root.
+
+          LV_CODE_POINT = CL_ABAP_CONV_OUT_CE=>UCCPI( LV_CHAR ).
+
+        CATCH CX_ROOT.
+
           " Half of a surrogate pair (emoji): not GSM, not Turkish
-          lv_code_point = 65535.
+          LV_CODE_POINT = 65535.
+
       ENDTRY.
-      lv_kind = kind_of( lv_code_point ).
-      CASE lv_kind.
-        WHEN kind-basic.
-          lv_basic = lv_basic + 1.
-        WHEN kind-extension.
-          lv_ext = lv_ext + 1.
-        WHEN kind-turkish.
-          lv_tr = lv_tr + 1.
+      LV_KIND = KIND_OF( LV_CODE_POINT ).
+      CASE LV_KIND.
+
+        WHEN KIND-BASIC.
+
+          LV_BASIC = LV_BASIC + 1.
+
+        WHEN KIND-EXTENSION.
+
+          LV_EXT = LV_EXT + 1.
+
+        WHEN KIND-TURKISH.
+
+          LV_TR = LV_TR + 1.
+
         WHEN OTHERS.
-          lv_other = lv_other + 1.
+
+          LV_OTHER = LV_OTHER + 1.
+
       ENDCASE.
-      IF is_turkish_letter( lv_code_point ) = abap_true.
-        lv_letters = lv_letters + 1.
+      IF IS_TURKISH_LETTER( LV_CODE_POINT ) EQ ABAP_TRUE.
+
+        LV_LETTERS = LV_LETTERS + 1.
+
       ENDIF.
+
     ENDDO.
 
-    CASE iv_encoding.
-      WHEN lif_sms=>encoding-unicode.
-        rs_info-encoding = lif_sms=>encoding-unicode.
-      WHEN lif_sms=>encoding-turkish.
-        IF lv_other > 0.
-          rs_info-message = lcl_text=>get( 'TR_UNICODE' ).
+    CASE IV_ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-UNICODE.
+
+        RS_INFO-ENCODING = LIF_SMS=>ENCODING-UNICODE.
+
+      WHEN LIF_SMS=>ENCODING-TURKISH.
+
+        IF LV_OTHER GT 0.
+
+          RS_INFO-MESSAGE = LCL_TEXT=>GET( 'TR_UNICODE' ).
           RETURN.
+
         ENDIF.
-        rs_info-encoding = lif_sms=>encoding-turkish.
+        RS_INFO-ENCODING = LIF_SMS=>ENCODING-TURKISH.
+
       WHEN OTHERS.
+
         " AUTO, and ASCII after the conversion
-        IF lv_other > 0.
-          rs_info-encoding = lif_sms=>encoding-unicode.
-        ELSEIF lv_letters > 0.
-          rs_info-encoding = lif_sms=>encoding-turkish.
+        IF LV_OTHER GT 0.
+
+          RS_INFO-ENCODING = LIF_SMS=>ENCODING-UNICODE.
+
+        ELSEIF LV_LETTERS GT 0.
+
+          RS_INFO-ENCODING = LIF_SMS=>ENCODING-TURKISH.
+
         ELSE.
-          rs_info-encoding = lif_sms=>encoding-gsm.
+
+          RS_INFO-ENCODING = LIF_SMS=>ENCODING-GSM.
+
         ENDIF.
+
     ENDCASE.
 
-    CASE rs_info-encoding.
-      WHEN lif_sms=>encoding-gsm.
-        rs_info-units = lv_basic + 2 * lv_ext.
-        lv_single = 160.
-        lv_multi = 153.
-        rs_info-max_units = 912.
-      WHEN lif_sms=>encoding-turkish.
-        rs_info-units = lv_basic + 2 * lv_ext + 2 * lv_tr.
-        lv_single = 155.
-        lv_multi = 148.
-        rs_info-max_units = 883.
+    CASE RS_INFO-ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-GSM.
+
+        RS_INFO-UNITS = LV_BASIC + 2 * LV_EXT.
+        LV_SINGLE = 160.
+        LV_MULTI = 153.
+        RS_INFO-MAX_UNITS = 912.
+
+      WHEN LIF_SMS=>ENCODING-TURKISH.
+
+        RS_INFO-UNITS = LV_BASIC + 2 * LV_EXT + 2 * LV_TR.
+        LV_SINGLE = 155.
+        LV_MULTI = 148.
+        RS_INFO-MAX_UNITS = 883.
+
       WHEN OTHERS.
+
         " UTF-16 code units, an emoji counts as two
-        rs_info-units = lv_len.
-        lv_single = 70.
-        lv_multi = 66.
-        rs_info-max_units = 391.
+        RS_INFO-UNITS = LV_LEN.
+        LV_SINGLE = 70.
+        LV_MULTI = 66.
+        RS_INFO-MAX_UNITS = 391.
+
     ENDCASE.
 
-    lv_header = iv_header.
-    TRANSLATE lv_header TO UPPER CASE.
-    IF lv_header CA sy-abcde.
-      rs_info-suffix = 5.
+    LV_HEADER = IV_HEADER.
+    TRANSLATE LV_HEADER TO UPPER CASE.
+    IF LV_HEADER CA SY-ABCDE.
+
+      RS_INFO-SUFFIX = 5.
+
     ENDIF.
 
-    lv_total = rs_info-units + rs_info-suffix.
-    IF lv_total <= lv_single.
-      rs_info-parts = 1.
+    LV_TOTAL = RS_INFO-UNITS + RS_INFO-SUFFIX.
+    IF LV_TOTAL LE LV_SINGLE.
+
+      RS_INFO-PARTS = 1.
+
     ELSE.
-      rs_info-parts = lv_total DIV lv_multi.
-      IF lv_total MOD lv_multi > 0.
-        rs_info-parts = rs_info-parts + 1.
+
+      RS_INFO-PARTS = LV_TOTAL DIV LV_MULTI.
+      IF LV_TOTAL MOD LV_MULTI GT 0.
+
+        RS_INFO-PARTS = RS_INFO-PARTS + 1.
+
       ENDIF.
+
     ENDIF.
 
-    IF rs_info-units > rs_info-max_units
-       OR rs_info-parts > lif_sms=>max_parts.
-      lv_1 = rs_info-units.
-      lv_2 = rs_info-max_units.
-      CONDENSE: lv_1, lv_2.
-      rs_info-message = lcl_text=>get( iv_key = 'TOO_LONG'
-                                       iv_1   = lv_1
-                                       iv_2   = lv_2 ).
+    IF RS_INFO-UNITS GT RS_INFO-MAX_UNITS
+       OR RS_INFO-PARTS GT LIF_SMS=>MAX_PARTS.
+
+      LV_1 = RS_INFO-UNITS.
+      LV_2 = RS_INFO-MAX_UNITS.
+      CONDENSE: LV_1, LV_2.
+      RS_INFO-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'TOO_LONG'
+                                       IV_1   = LV_1
+                                       IV_2   = LV_2 ).
       RETURN.
+
     ENDIF.
-    rs_info-ok = abap_true.
+    RS_INFO-OK = ABAP_TRUE.
+
   ENDMETHOD.
 
+  METHOD KIND_OF.
 
-  METHOD kind_of.
-    CASE iv_code_point.
+    CASE IV_CODE_POINT.
+
       WHEN 10 OR 13 OR 95.
-        rv_kind = kind-basic.
+
+        RV_KIND = KIND-BASIC.
+
       WHEN 12 OR 91 OR 92 OR 93 OR 94 OR 123 OR 124 OR 125 OR 126
         OR 8364.
-        rv_kind = kind-extension.
+
+        RV_KIND = KIND-EXTENSION.
+
       WHEN 231 OR 286 OR 287 OR 304 OR 305 OR 350 OR 351.
-        rv_kind = kind-turkish.
+
+        RV_KIND = KIND-TURKISH.
+
       WHEN 161 OR 163 OR 164 OR 165 OR 167 OR 191 OR 196 OR 197
         OR 198 OR 199 OR 201 OR 209 OR 214 OR 216 OR 220 OR 223
         OR 224 OR 228 OR 229 OR 230 OR 232 OR 233 OR 236 OR 241
         OR 242 OR 246 OR 248 OR 249 OR 252
         OR 915 OR 916 OR 920 OR 923 OR 926 OR 928 OR 931 OR 934
         OR 936 OR 937.
-        rv_kind = kind-basic.
+
+        RV_KIND = KIND-BASIC.
+
       WHEN OTHERS.
-        IF ( iv_code_point >= 32 AND iv_code_point <= 90 )
-           OR ( iv_code_point >= 97 AND iv_code_point <= 122 ).
-          rv_kind = kind-basic.
+
+        IF ( IV_CODE_POINT GE 32 AND IV_CODE_POINT LE 90 )
+           OR ( IV_CODE_POINT GE 97 AND IV_CODE_POINT LE 122 ).
+
+          RV_KIND = KIND-BASIC.
+
         ELSE.
-          rv_kind = kind-other.
+
+          RV_KIND = KIND-OTHER.
+
         ENDIF.
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD IS_TURKISH_LETTER.
 
-  METHOD is_turkish_letter.
-    CASE iv_code_point.
+    CASE IV_CODE_POINT.
+
       WHEN 199 OR 231 OR 286 OR 287 OR 304 OR 305 OR 214 OR 246
         OR 350 OR 351 OR 220 OR 252.
-        rv_yes = abap_true.
+
+        RV_YES = ABAP_TRUE.
+
       WHEN OTHERS.
-        rv_yes = abap_false.
+
+        RV_YES = ABAP_FALSE.
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD TO_ASCII.
 
-  METHOD to_ascii.
-    rv_text = iv_text.
-    replace_code_point( EXPORTING iv_code_point = 231 iv_with = 'c'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 199 iv_with = 'C'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 287 iv_with = 'g'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 286 iv_with = 'G'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 305 iv_with = 'i'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 304 iv_with = 'I'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 246 iv_with = 'o'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 214 iv_with = 'O'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 351 iv_with = 's'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 350 iv_with = 'S'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 252 iv_with = 'u'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 220 iv_with = 'U'
-                        CHANGING  cv_text = rv_text ).
+    RV_TEXT = IV_TEXT.
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 231 IV_WITH = 'c'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 199 IV_WITH = 'C'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 287 IV_WITH = 'g'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 286 IV_WITH = 'G'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 305 IV_WITH = 'i'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 304 IV_WITH = 'I'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 246 IV_WITH = 'o'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 214 IV_WITH = 'O'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 351 IV_WITH = 's'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 350 IV_WITH = 'S'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 252 IV_WITH = 'u'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 220 IV_WITH = 'U'
+                        CHANGING  CV_TEXT = RV_TEXT ).
     " Circumflex letters in loan words
-    replace_code_point( EXPORTING iv_code_point = 226 iv_with = 'a'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 194 iv_with = 'A'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 238 iv_with = 'i'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 206 iv_with = 'I'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 251 iv_with = 'u'
-                        CHANGING  cv_text = rv_text ).
-    replace_code_point( EXPORTING iv_code_point = 219 iv_with = 'U'
-                        CHANGING  cv_text = rv_text ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 226 IV_WITH = 'a'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 194 IV_WITH = 'A'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 238 IV_WITH = 'i'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 206 IV_WITH = 'I'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 251 IV_WITH = 'u'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+    REPLACE_CODE_POINT( EXPORTING IV_CODE_POINT = 219 IV_WITH = 'U'
+                        CHANGING  CV_TEXT = RV_TEXT ).
+
   ENDMETHOD.
 
+  METHOD CHECK_OTP.
 
-  METHOD check_otp.
-    DATA lv_text TYPE string.
-    DATA lv_len TYPE i.
-    DATA lv_pos TYPE i.
-    DATA lv_char TYPE c LENGTH 1.
-    DATA lv_code_point TYPE i.
-    DATA lv_kind TYPE ty_kind.
-    DATA lv_header TYPE string.
-    DATA lv_max TYPE i.
-    DATA lv_1 TYPE c LENGTH 12.
-    DATA lv_2 TYPE c LENGTH 12.
+    DATA: LV_TEXT       TYPE STRING,
+          LV_LEN        TYPE I,
+          LV_POS        TYPE I,
+          LV_CHAR       TYPE C LENGTH 1,
+          LV_CODE_POINT TYPE I,
+          LV_KIND       TYPE TY_KIND,
+          LV_HEADER     TYPE STRING,
+          LV_MAX        TYPE I,
+          LV_1          TYPE C LENGTH 12,
+          LV_2          TYPE C LENGTH 12.
 
-    lv_text = iv_text.
-    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf
-            IN lv_text WITH cl_abap_char_utilities=>newline.
-    IF iv_ascii = abap_true.
-      lv_text = to_ascii( lv_text ).
+    LV_TEXT = IV_TEXT.
+    REPLACE ALL OCCURRENCES OF CL_ABAP_CHAR_UTILITIES=>CR_LF
+            IN LV_TEXT WITH CL_ABAP_CHAR_UTILITIES=>NEWLINE.
+    IF IV_ASCII EQ ABAP_TRUE.
+
+      LV_TEXT = TO_ASCII( LV_TEXT ).
+
     ENDIF.
-    rs_info-text = lv_text.
-    rs_info-encoding = lif_sms=>encoding-gsm.
-    rs_info-max_units = 160.
-    lv_header = iv_header.
-    TRANSLATE lv_header TO UPPER CASE.
-    IF lv_header CA sy-abcde.
-      rs_info-suffix = 5.
-    ENDIF.
-    lv_max = rs_info-max_units - rs_info-suffix.
+    RS_INFO-TEXT = LV_TEXT.
+    RS_INFO-ENCODING = LIF_SMS=>ENCODING-GSM.
+    RS_INFO-MAX_UNITS = 160.
+    LV_HEADER = IV_HEADER.
+    TRANSLATE LV_HEADER TO UPPER CASE.
+    IF LV_HEADER CA SY-ABCDE.
 
-    lv_len = strlen( lv_text ).
-    IF lv_len = 0.
-      rs_info-message = lcl_text=>get( 'NO_TEXT' ).
+      RS_INFO-SUFFIX = 5.
+
+    ENDIF.
+    LV_MAX = RS_INFO-MAX_UNITS - RS_INFO-SUFFIX.
+
+    LV_LEN = STRLEN( LV_TEXT ).
+    IF LV_LEN EQ 0.
+
+      RS_INFO-MESSAGE = LCL_TEXT=>GET( 'NO_TEXT' ).
       RETURN.
+
     ENDIF.
-    DO lv_len TIMES.
-      lv_pos = sy-index - 1.
-      lv_char = lv_text+lv_pos(1).
+    DO LV_LEN TIMES.
+
+      LV_POS = SY-INDEX - 1.
+      LV_CHAR = LV_TEXT+LV_POS(1).
       TRY.
-          lv_code_point = cl_abap_conv_out_ce=>uccpi( lv_char ).
-        CATCH cx_root.
-          lv_code_point = 65535.
+
+          LV_CODE_POINT = CL_ABAP_CONV_OUT_CE=>UCCPI( LV_CHAR ).
+
+        CATCH CX_ROOT.
+
+          LV_CODE_POINT = 65535.
+
       ENDTRY.
-      lv_kind = kind_of( lv_code_point ).
-      IF lv_kind = kind-other OR lv_kind = kind-turkish
-         OR lv_code_point = 199.
-        rs_info-message = lcl_text=>get( iv_key = 'OTP_CHARS'
-                                         iv_1   = lv_char ).
+      LV_KIND = KIND_OF( LV_CODE_POINT ).
+      IF LV_KIND EQ KIND-OTHER OR LV_KIND EQ KIND-TURKISH
+         OR LV_CODE_POINT EQ 199.
+
+        RS_INFO-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'OTP_CHARS'
+                                         IV_1   = LV_CHAR ).
         RETURN.
+
       ENDIF.
-      IF lv_kind = kind-extension.
-        rs_info-units = rs_info-units + 2.
+      IF LV_KIND EQ KIND-EXTENSION.
+
+        RS_INFO-UNITS = RS_INFO-UNITS + 2.
+
       ELSE.
-        rs_info-units = rs_info-units + 1.
+
+        RS_INFO-UNITS = RS_INFO-UNITS + 1.
+
       ENDIF.
+
     ENDDO.
-    rs_info-parts = 1.
-    IF rs_info-units > lv_max.
-      lv_1 = rs_info-units.
-      lv_2 = lv_max.
-      CONDENSE: lv_1, lv_2.
-      rs_info-message = lcl_text=>get( iv_key = 'OTP_LONG'
-                                       iv_1   = lv_1
-                                       iv_2   = lv_2 ).
+    RS_INFO-PARTS = 1.
+    IF RS_INFO-UNITS GT LV_MAX.
+
+      LV_1 = RS_INFO-UNITS.
+      LV_2 = LV_MAX.
+      CONDENSE: LV_1, LV_2.
+      RS_INFO-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'OTP_LONG'
+                                       IV_1   = LV_1
+                                       IV_2   = LV_2 ).
       RETURN.
+
     ENDIF.
-    rs_info-max_units = lv_max.
-    rs_info-ok = abap_true.
+    RS_INFO-MAX_UNITS = LV_MAX.
+    RS_INFO-OK = ABAP_TRUE.
+
   ENDMETHOD.
 
+  METHOD REPLACE_CODE_POINT.
 
-  METHOD replace_code_point.
-    DATA lv_char TYPE c LENGTH 1.
+    DATA LV_CHAR TYPE C LENGTH 1.
 
-    lv_char = cl_abap_conv_in_ce=>uccpi( iv_code_point ).
-    REPLACE ALL OCCURRENCES OF lv_char IN cv_text WITH iv_with.
+    LV_CHAR = CL_ABAP_CONV_IN_CE=>UCCPI( IV_CODE_POINT ).
+    REPLACE ALL OCCURRENCES OF LV_CHAR IN CV_TEXT WITH IV_WITH.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Minimal JSON. Writing: escape string values. Reading: the answer
@@ -1661,621 +2284,756 @@ ENDCLASS.
 *   code = 00, jobs/1/jobid = 123, jobs/1/status = 1
 * Release 7.00 has no JSON parser of its own (/UI2/CL_JSON is later).
 *----------------------------------------------------------------------*
-CLASS lcl_sms_json DEFINITION FINAL.
+CLASS LCL_SMS_JSON DEFINITION FINAL.
   PUBLIC SECTION.
     TYPES:
-      BEGIN OF ty_value,
-        path  TYPE string,
-        value TYPE string,
-      END OF ty_value,
-      ty_values TYPE STANDARD TABLE OF ty_value WITH DEFAULT KEY.
+      BEGIN OF TY_VALUE,
+        PATH  TYPE STRING,
+        VALUE TYPE STRING,
+      END OF TY_VALUE,
+      TY_VALUES TYPE STANDARD TABLE OF TY_VALUE WITH DEFAULT KEY.
 
-    CLASS-METHODS escape
+    CLASS-METHODS ESCAPE
       IMPORTING
-        iv_text        TYPE csequence
+        IV_TEXT        TYPE CSEQUENCE
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
-    CLASS-METHODS parse
+    CLASS-METHODS PARSE
       IMPORTING
-        iv_json          TYPE string
+        IV_JSON          TYPE STRING
       RETURNING
-        value(rt_values) TYPE ty_values
+        VALUE(RT_VALUES) TYPE TY_VALUES
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    CLASS-METHODS value_of
+    CLASS-METHODS VALUE_OF
       IMPORTING
-        it_values       TYPE ty_values
-        iv_path         TYPE csequence
+        IT_VALUES       TYPE TY_VALUES
+        IV_PATH         TYPE CSEQUENCE
       RETURNING
-        value(rv_value) TYPE string.
+        VALUE(RV_VALUE) TYPE STRING.
 
-    CLASS-METHODS has
+    CLASS-METHODS HAS
       IMPORTING
-        it_values     TYPE ty_values
-        iv_path       TYPE csequence
+        IT_VALUES     TYPE TY_VALUES
+        IV_PATH       TYPE CSEQUENCE
       RETURNING
-        value(rv_yes) TYPE abap_bool.
+        VALUE(RV_YES) TYPE ABAP_BOOL.
 
   PRIVATE SECTION.
-    DATA mv_json TYPE string.
-    DATA mv_len TYPE i.
-    DATA mv_pos TYPE i.
-    DATA mt_values TYPE ty_values.
+    DATA MV_JSON TYPE STRING.
+    DATA MV_LEN TYPE I.
+    DATA MV_POS TYPE I.
+    DATA MT_VALUES TYPE TY_VALUES.
 
-    METHODS read_value
+    METHODS READ_VALUE
       IMPORTING
-        iv_path TYPE string
+        IV_PATH TYPE STRING
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    METHODS read_object
+    METHODS READ_OBJECT
       IMPORTING
-        iv_path TYPE string
+        IV_PATH TYPE STRING
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    METHODS read_array
+    METHODS READ_ARRAY
       IMPORTING
-        iv_path TYPE string
+        IV_PATH TYPE STRING
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    METHODS read_string
+    METHODS READ_STRING
       RETURNING
-        value(rv_value) TYPE string
+        VALUE(RV_VALUE) TYPE STRING
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    METHODS read_literal
+    METHODS READ_LITERAL
       RETURNING
-        value(rv_value) TYPE string.
+        VALUE(RV_VALUE) TYPE STRING.
 
-    METHODS skip_blanks.
+    METHODS SKIP_BLANKS.
 
-    METHODS current
+    METHODS CURRENT
       RETURNING
-        value(rv_char) TYPE string.
+        VALUE(RV_CHAR) TYPE STRING.
 
-    METHODS add
+    METHODS ADD
       IMPORTING
-        iv_path  TYPE string
-        iv_value TYPE string.
+        IV_PATH  TYPE STRING
+        IV_VALUE TYPE STRING.
 
-    METHODS fail
+    METHODS FAIL
       IMPORTING
-        iv_what TYPE string
+        IV_WHAT TYPE STRING
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
-    CLASS-METHODS unescape
+    CLASS-METHODS UNESCAPE
       IMPORTING
-        iv_raw          TYPE string
+        IV_RAW          TYPE STRING
       RETURNING
-        value(rv_value) TYPE string.
+        VALUE(RV_VALUE) TYPE STRING.
 
-    CLASS-METHODS child_path
+    CLASS-METHODS CHILD_PATH
       IMPORTING
-        iv_path        TYPE string
-        iv_name        TYPE csequence
+        IV_PATH        TYPE STRING
+        IV_NAME        TYPE CSEQUENCE
       RETURNING
-        value(rv_path) TYPE string.
+        VALUE(RV_PATH) TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_SMS_JSON IMPLEMENTATION.
 
-CLASS lcl_sms_json IMPLEMENTATION.
+  METHOD ESCAPE.
 
-  METHOD escape.
-    DATA lv_char TYPE c LENGTH 1.
+    DATA LV_CHAR TYPE C LENGTH 1.
 
-    rv_json = iv_text.
-    REPLACE ALL OCCURRENCES OF `\` IN rv_json WITH `\\`.
-    REPLACE ALL OCCURRENCES OF `"` IN rv_json WITH `\"`.
-    lv_char = cl_abap_char_utilities=>newline.
-    REPLACE ALL OCCURRENCES OF lv_char IN rv_json WITH `\n`.
-    lv_char = cl_abap_char_utilities=>cr_lf(1).
-    REPLACE ALL OCCURRENCES OF lv_char IN rv_json WITH `\r`.
-    lv_char = cl_abap_char_utilities=>horizontal_tab.
-    REPLACE ALL OCCURRENCES OF lv_char IN rv_json WITH `\t`.
+    RV_JSON = IV_TEXT.
+    REPLACE ALL OCCURRENCES OF `\` IN RV_JSON WITH `\\`.
+    REPLACE ALL OCCURRENCES OF `"` IN RV_JSON WITH `\"`.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>NEWLINE.
+    REPLACE ALL OCCURRENCES OF LV_CHAR IN RV_JSON WITH `\n`.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>CR_LF(1).
+    REPLACE ALL OCCURRENCES OF LV_CHAR IN RV_JSON WITH `\r`.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+    REPLACE ALL OCCURRENCES OF LV_CHAR IN RV_JSON WITH `\t`.
+
   ENDMETHOD.
 
+  METHOD PARSE.
 
-  METHOD parse.
-    DATA lo_parser TYPE REF TO lcl_sms_json.
+    DATA LO_PARSER TYPE REF TO LCL_SMS_JSON.
 
-    CREATE OBJECT lo_parser.
-    lo_parser->mv_json = iv_json.
-    lo_parser->mv_len = strlen( iv_json ).
-    lo_parser->read_value( `` ).
-    lo_parser->skip_blanks( ).
-    IF lo_parser->mv_pos < lo_parser->mv_len.
-      lo_parser->fail( `text after the end` ).
+    CREATE OBJECT LO_PARSER.
+    LO_PARSER->MV_JSON = IV_JSON.
+    LO_PARSER->MV_LEN = STRLEN( IV_JSON ).
+    LO_PARSER->READ_VALUE( `` ).
+    LO_PARSER->SKIP_BLANKS( ).
+    IF LO_PARSER->MV_POS LT LO_PARSER->MV_LEN.
+
+      LO_PARSER->FAIL( `text after the end` ).
+
     ENDIF.
-    rt_values = lo_parser->mt_values.
+    RT_VALUES = LO_PARSER->MT_VALUES.
+
   ENDMETHOD.
 
+  METHOD VALUE_OF.
 
-  METHOD value_of.
-    DATA ls_value TYPE ty_value.
+    DATA LS_VALUE TYPE TY_VALUE.
 
-    READ TABLE it_values INTO ls_value WITH KEY path = iv_path.
-    IF sy-subrc = 0.
-      rv_value = ls_value-value.
+    CLEAR LS_VALUE.
+    READ TABLE IT_VALUES
+         INTO LS_VALUE
+         WITH KEY PATH = IV_PATH.
+    IF SY-SUBRC EQ 0.
+
+      RV_VALUE = LS_VALUE-VALUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD HAS.
 
-  METHOD has.
-    READ TABLE it_values TRANSPORTING NO FIELDS
-         WITH KEY path = iv_path.
-    IF sy-subrc = 0.
-      rv_yes = abap_true.
+    READ TABLE IT_VALUES
+         TRANSPORTING NO FIELDS
+         WITH KEY PATH = IV_PATH.
+    IF SY-SUBRC EQ 0.
+
+      RV_YES = ABAP_TRUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD READ_VALUE.
 
-  METHOD read_value.
-    DATA lv_char TYPE string.
-    DATA lv_value TYPE string.
+    DATA: LV_CHAR  TYPE STRING,
+          LV_VALUE TYPE STRING.
 
-    skip_blanks( ).
-    lv_char = current( ).
-    CASE lv_char.
+    SKIP_BLANKS( ).
+    LV_CHAR = CURRENT( ).
+    CASE LV_CHAR.
+
       WHEN `{`.
-        read_object( iv_path ).
+
+        READ_OBJECT( IV_PATH ).
+
       WHEN `[`.
-        read_array( iv_path ).
+
+        READ_ARRAY( IV_PATH ).
+
       WHEN `"`.
-        lv_value = read_string( ).
-        add( iv_path = iv_path iv_value = lv_value ).
+
+        LV_VALUE = READ_STRING( ).
+        ADD( IV_PATH = IV_PATH IV_VALUE = LV_VALUE ).
+
       WHEN ``.
-        fail( `unexpected end` ).
+
+        FAIL( `unexpected end` ).
+
       WHEN OTHERS.
-        lv_value = read_literal( ).
-        IF lv_value IS INITIAL.
-          fail( `unexpected character` ).
+
+        LV_VALUE = READ_LITERAL( ).
+        IF LV_VALUE IS INITIAL.
+
+          FAIL( `unexpected character` ).
+
         ENDIF.
-        IF lv_value = `null`.
-          CLEAR lv_value.
+        IF LV_VALUE EQ `null`.
+
+          CLEAR LV_VALUE.
+
         ENDIF.
-        add( iv_path = iv_path iv_value = lv_value ).
+        ADD( IV_PATH = IV_PATH IV_VALUE = LV_VALUE ).
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD READ_OBJECT.
 
-  METHOD read_object.
-    DATA lv_name TYPE string.
-    DATA lv_char TYPE string.
-    DATA lv_path TYPE string.
+    DATA: LV_NAME TYPE STRING,
+          LV_CHAR TYPE STRING,
+          LV_PATH TYPE STRING.
 
-    mv_pos = mv_pos + 1.
-    skip_blanks( ).
-    IF current( ) = `}`.
-      mv_pos = mv_pos + 1.
+    MV_POS = MV_POS + 1.
+    SKIP_BLANKS( ).
+    IF CURRENT( ) EQ `}`.
+
+      MV_POS = MV_POS + 1.
       RETURN.
+
     ENDIF.
     DO.
-      skip_blanks( ).
-      IF current( ) <> `"`.
-        fail( `name expected` ).
+
+      SKIP_BLANKS( ).
+      IF CURRENT( ) NE `"`.
+
+        FAIL( `name expected` ).
+
       ENDIF.
-      lv_name = read_string( ).
-      skip_blanks( ).
-      IF current( ) <> `:`.
-        fail( `colon expected` ).
+      LV_NAME = READ_STRING( ).
+      SKIP_BLANKS( ).
+      IF CURRENT( ) NE `:`.
+
+        FAIL( `colon expected` ).
+
       ENDIF.
-      mv_pos = mv_pos + 1.
-      lv_path = child_path( iv_path = iv_path iv_name = lv_name ).
-      read_value( lv_path ).
-      skip_blanks( ).
-      lv_char = current( ).
-      mv_pos = mv_pos + 1.
-      IF lv_char = `}`.
+      MV_POS = MV_POS + 1.
+      LV_PATH = CHILD_PATH( IV_PATH = IV_PATH IV_NAME = LV_NAME ).
+      READ_VALUE( LV_PATH ).
+      SKIP_BLANKS( ).
+      LV_CHAR = CURRENT( ).
+      MV_POS = MV_POS + 1.
+      IF LV_CHAR EQ `}`.
+
         EXIT.
-      ELSEIF lv_char <> `,`.
-        fail( `comma or } expected` ).
+
+      ELSEIF LV_CHAR NE `,`.
+
+        FAIL( `comma or } expected` ).
+
       ENDIF.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD READ_ARRAY.
 
-  METHOD read_array.
-    DATA lv_index TYPE i.
-    DATA lv_name TYPE c LENGTH 11.
-    DATA lv_char TYPE string.
-    DATA lv_path TYPE string.
+    DATA: LV_INDEX TYPE I,
+          LV_NAME  TYPE C LENGTH 11,
+          LV_CHAR  TYPE STRING,
+          LV_PATH  TYPE STRING.
 
-    mv_pos = mv_pos + 1.
-    skip_blanks( ).
-    IF current( ) = `]`.
-      mv_pos = mv_pos + 1.
+    MV_POS = MV_POS + 1.
+    SKIP_BLANKS( ).
+    IF CURRENT( ) EQ `]`.
+
+      MV_POS = MV_POS + 1.
       RETURN.
+
     ENDIF.
     DO.
-      lv_index = lv_index + 1.
-      lv_name = lv_index.
-      CONDENSE lv_name.
-      lv_path = child_path( iv_path = iv_path iv_name = lv_name ).
-      read_value( lv_path ).
-      skip_blanks( ).
-      lv_char = current( ).
-      mv_pos = mv_pos + 1.
-      IF lv_char = `]`.
+
+      LV_INDEX = LV_INDEX + 1.
+      LV_NAME = LV_INDEX.
+      CONDENSE LV_NAME.
+      LV_PATH = CHILD_PATH( IV_PATH = IV_PATH IV_NAME = LV_NAME ).
+      READ_VALUE( LV_PATH ).
+      SKIP_BLANKS( ).
+      LV_CHAR = CURRENT( ).
+      MV_POS = MV_POS + 1.
+      IF LV_CHAR EQ `]`.
+
         EXIT.
-      ELSEIF lv_char <> `,`.
-        fail( `comma or ] expected` ).
+
+      ELSEIF LV_CHAR NE `,`.
+
+        FAIL( `comma or ] expected` ).
+
       ENDIF.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD READ_STRING.
 
-  METHOD read_string.
-    DATA lv_start TYPE i.
-    DATA lv_from TYPE i.
-    DATA lv_quote TYPE i.
-    DATA lv_back TYPE i.
-    DATA lv_count TYPE i.
-    DATA lv_len TYPE i.
-    DATA lv_raw TYPE string.
+    DATA: LV_START TYPE I,
+          LV_FROM  TYPE I,
+          LV_QUOTE TYPE I,
+          LV_BACK  TYPE I,
+          LV_COUNT TYPE I,
+          LV_LEN   TYPE I,
+          LV_RAW   TYPE STRING.
 
-    lv_start = mv_pos + 1.
-    lv_from = lv_start.
+    LV_START = MV_POS + 1.
+    LV_FROM = LV_START.
     DO.
-      IF lv_from >= mv_len.
-        fail( `string not closed` ).
+
+      IF LV_FROM GE MV_LEN.
+
+        FAIL( `string not closed` ).
+
       ENDIF.
-      FIND `"` IN SECTION OFFSET lv_from OF mv_json
-           MATCH OFFSET lv_quote.
-      IF sy-subrc <> 0.
-        fail( `string not closed` ).
+      FIND `"` IN SECTION OFFSET LV_FROM OF MV_JSON
+           MATCH OFFSET LV_QUOTE.
+      IF SY-SUBRC NE 0.
+
+        FAIL( `string not closed` ).
+
       ENDIF.
       " An odd number of backslashes before it escapes the quote
-      lv_count = 0.
-      lv_back = lv_quote - 1.
-      WHILE lv_back >= lv_start AND mv_json+lv_back(1) = `\`.
-        lv_count = lv_count + 1.
-        lv_back = lv_back - 1.
+      LV_COUNT = 0.
+      LV_BACK = LV_QUOTE - 1.
+      WHILE LV_BACK GE LV_START AND MV_JSON+LV_BACK(1) EQ `\`.
+
+        LV_COUNT = LV_COUNT + 1.
+        LV_BACK = LV_BACK - 1.
+
       ENDWHILE.
-      IF lv_count MOD 2 = 0.
+      IF LV_COUNT MOD 2 EQ 0.
+
         EXIT.
+
       ENDIF.
-      lv_from = lv_quote + 1.
+      LV_FROM = LV_QUOTE + 1.
+
     ENDDO.
-    lv_len = lv_quote - lv_start.
-    IF lv_len > 0.
-      lv_raw = mv_json+lv_start(lv_len).
+    LV_LEN = LV_QUOTE - LV_START.
+    IF LV_LEN GT 0.
+
+      LV_RAW = MV_JSON+LV_START(LV_LEN).
+
     ENDIF.
-    rv_value = unescape( lv_raw ).
-    mv_pos = lv_quote + 1.
+    RV_VALUE = UNESCAPE( LV_RAW ).
+    MV_POS = LV_QUOTE + 1.
+
   ENDMETHOD.
 
+  METHOD READ_LITERAL.
 
-  METHOD read_literal.
     " A number, true, false or null; anything else is an error
-    DATA lv_end TYPE i.
-    DATA lv_len TYPE i.
-    DATA lv_char TYPE c LENGTH 1.
+    DATA: LV_END  TYPE I,
+          LV_LEN  TYPE I,
+          LV_CHAR TYPE C LENGTH 1.
 
-    lv_end = mv_pos.
-    WHILE lv_end < mv_len.
-      lv_char = mv_json+lv_end(1).
-      IF lv_char CA ',}]'
-         OR lv_char = ' '
-         OR lv_char = cl_abap_char_utilities=>newline
-         OR lv_char = cl_abap_char_utilities=>cr_lf(1)
-         OR lv_char = cl_abap_char_utilities=>horizontal_tab.
+    LV_END = MV_POS.
+    WHILE LV_END LT MV_LEN.
+
+      LV_CHAR = MV_JSON+LV_END(1).
+      IF LV_CHAR CA ',}]'
+         OR LV_CHAR EQ ' '
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>NEWLINE
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>CR_LF(1)
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+
         EXIT.
+
       ENDIF.
-      lv_end = lv_end + 1.
+      LV_END = LV_END + 1.
+
     ENDWHILE.
-    lv_len = lv_end - mv_pos.
-    IF lv_len > 0.
-      rv_value = mv_json+mv_pos(lv_len).
+    LV_LEN = LV_END - MV_POS.
+    IF LV_LEN GT 0.
+
+      RV_VALUE = MV_JSON+MV_POS(LV_LEN).
+
     ENDIF.
-    IF rv_value <> `true` AND rv_value <> `false`
-       AND rv_value <> `null` AND NOT rv_value CO '0123456789+-.eE'.
-      CLEAR rv_value.
+    IF RV_VALUE NE `true` AND RV_VALUE NE `false`
+       AND RV_VALUE NE `null` AND NOT RV_VALUE CO '0123456789+-.eE'.
+
+      CLEAR RV_VALUE.
       RETURN.
+
     ENDIF.
-    mv_pos = lv_end.
+    MV_POS = LV_END.
+
   ENDMETHOD.
 
+  METHOD SKIP_BLANKS.
 
-  METHOD skip_blanks.
-    DATA lv_char TYPE c LENGTH 1.
+    DATA LV_CHAR TYPE C LENGTH 1.
 
-    WHILE mv_pos < mv_len.
-      lv_char = mv_json+mv_pos(1).
-      IF lv_char = ' '
-         OR lv_char = cl_abap_char_utilities=>newline
-         OR lv_char = cl_abap_char_utilities=>cr_lf(1)
-         OR lv_char = cl_abap_char_utilities=>horizontal_tab.
-        mv_pos = mv_pos + 1.
+    WHILE MV_POS LT MV_LEN.
+
+      LV_CHAR = MV_JSON+MV_POS(1).
+      IF LV_CHAR EQ ' '
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>NEWLINE
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>CR_LF(1)
+         OR LV_CHAR EQ CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+
+        MV_POS = MV_POS + 1.
+
       ELSE.
+
         EXIT.
+
       ENDIF.
+
     ENDWHILE.
+
   ENDMETHOD.
 
+  METHOD CURRENT.
 
-  METHOD current.
-    IF mv_pos < mv_len.
-      rv_char = mv_json+mv_pos(1).
+    IF MV_POS LT MV_LEN.
+
+      RV_CHAR = MV_JSON+MV_POS(1).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ADD.
 
-  METHOD add.
-    DATA ls_value TYPE ty_value.
+    DATA LS_VALUE TYPE TY_VALUE.
 
-    ls_value-path = iv_path.
-    ls_value-value = iv_value.
-    APPEND ls_value TO mt_values.
+    LS_VALUE-PATH = IV_PATH.
+    LS_VALUE-VALUE = IV_VALUE.
+    APPEND LS_VALUE TO MT_VALUES.
+
   ENDMETHOD.
 
+  METHOD FAIL.
 
-  METHOD fail.
-    DATA lv_text TYPE string.
-    DATA lv_pos TYPE c LENGTH 11.
+    DATA: LV_TEXT TYPE STRING,
+          LV_POS  TYPE C LENGTH 11.
 
-    lv_pos = mv_pos.
-    CONDENSE lv_pos.
-    CONCATENATE iv_what ` at position ` lv_pos INTO lv_text.
-    RAISE EXCEPTION TYPE lcx_sms
+    LV_POS = MV_POS.
+    CONDENSE LV_POS.
+    CONCATENATE IV_WHAT ` at position ` LV_POS INTO LV_TEXT.
+    RAISE EXCEPTION TYPE LCX_SMS
       EXPORTING
-        code = lif_sms=>code-bad_reply
-        text = lv_text.
+        CODE = LIF_SMS=>CODE-BAD_REPLY
+        TEXT = LV_TEXT.
+
   ENDMETHOD.
 
+  METHOD UNESCAPE.
 
-  METHOD unescape.
-    DATA lv_mark TYPE c LENGTH 1.
-    DATA lv_char TYPE c LENGTH 1.
-    DATA lv_off TYPE i.
-    DATA lv_hex_off TYPE i.
-    DATA lv_rest TYPE i.
-    DATA lv_hex TYPE c LENGTH 4.
-    DATA lv_x TYPE x LENGTH 2.
-    DATA lv_code_point TYPE i.
+    DATA: LV_MARK       TYPE C LENGTH 1,
+          LV_CHAR       TYPE C LENGTH 1,
+          LV_OFF        TYPE I,
+          LV_HEX_OFF    TYPE I,
+          LV_REST       TYPE I,
+          LV_HEX        TYPE C LENGTH 4,
+          LV_X          TYPE X LENGTH 2,
+          LV_CODE_POINT TYPE I.
 
-    rv_value = iv_raw.
-    FIND `\` IN rv_value.
-    IF sy-subrc <> 0.
+    RV_VALUE = IV_RAW.
+    FIND `\` IN RV_VALUE.
+    IF SY-SUBRC NE 0.
+
       RETURN.
+
     ENDIF.
     " Keep escaped backslashes out of the way first
-    lv_mark = cl_abap_conv_in_ce=>uccpi( 1 ).
-    REPLACE ALL OCCURRENCES OF `\\` IN rv_value WITH lv_mark.
-    REPLACE ALL OCCURRENCES OF `\"` IN rv_value WITH `"`.
-    REPLACE ALL OCCURRENCES OF `\/` IN rv_value WITH `/`.
-    lv_char = cl_abap_char_utilities=>newline.
-    REPLACE ALL OCCURRENCES OF `\n` IN rv_value WITH lv_char.
-    lv_char = cl_abap_char_utilities=>cr_lf(1).
-    REPLACE ALL OCCURRENCES OF `\r` IN rv_value WITH lv_char.
-    lv_char = cl_abap_char_utilities=>horizontal_tab.
-    REPLACE ALL OCCURRENCES OF `\t` IN rv_value WITH lv_char.
-    REPLACE ALL OCCURRENCES OF `\b` IN rv_value WITH ``.
-    REPLACE ALL OCCURRENCES OF `\f` IN rv_value WITH ``.
+    LV_MARK = CL_ABAP_CONV_IN_CE=>UCCPI( 1 ).
+    REPLACE ALL OCCURRENCES OF `\\` IN RV_VALUE WITH LV_MARK.
+    REPLACE ALL OCCURRENCES OF `\"` IN RV_VALUE WITH `"`.
+    REPLACE ALL OCCURRENCES OF `\/` IN RV_VALUE WITH `/`.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>NEWLINE.
+    REPLACE ALL OCCURRENCES OF `\n` IN RV_VALUE WITH LV_CHAR.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>CR_LF(1).
+    REPLACE ALL OCCURRENCES OF `\r` IN RV_VALUE WITH LV_CHAR.
+    LV_CHAR = CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+    REPLACE ALL OCCURRENCES OF `\t` IN RV_VALUE WITH LV_CHAR.
+    REPLACE ALL OCCURRENCES OF `\b` IN RV_VALUE WITH ``.
+    REPLACE ALL OCCURRENCES OF `\f` IN RV_VALUE WITH ``.
     DO.
-      FIND `\u` IN rv_value MATCH OFFSET lv_off.
-      IF sy-subrc <> 0.
+
+      FIND `\u` IN RV_VALUE MATCH OFFSET LV_OFF.
+      IF SY-SUBRC NE 0.
+
         EXIT.
+
       ENDIF.
-      lv_hex_off = lv_off + 2.
-      lv_rest = strlen( rv_value ) - lv_hex_off.
-      IF lv_rest < 4.
-        REPLACE SECTION OFFSET lv_off LENGTH 2 OF rv_value WITH `?`.
+      LV_HEX_OFF = LV_OFF + 2.
+      LV_REST = STRLEN( RV_VALUE ) - LV_HEX_OFF.
+      IF LV_REST LT 4.
+
+        REPLACE SECTION OFFSET LV_OFF LENGTH 2 OF RV_VALUE WITH `?`.
         CONTINUE.
+
       ENDIF.
-      lv_hex = rv_value+lv_hex_off(4).
-      TRANSLATE lv_hex TO UPPER CASE.
-      lv_char = '?'.
-      IF lv_hex CO '0123456789ABCDEF'.
-        lv_x = lv_hex.
-        lv_code_point = lv_x.
+      LV_HEX = RV_VALUE+LV_HEX_OFF(4).
+      TRANSLATE LV_HEX TO UPPER CASE.
+      LV_CHAR = '?'.
+      IF LV_HEX CO '0123456789ABCDEF'.
+
+        LV_X = LV_HEX.
+        LV_CODE_POINT = LV_X.
         TRY.
-            lv_char = cl_abap_conv_in_ce=>uccpi( lv_code_point ).
-          CATCH cx_root.
-            lv_char = '?'.
+
+            LV_CHAR = CL_ABAP_CONV_IN_CE=>UCCPI( LV_CODE_POINT ).
+
+          CATCH CX_ROOT.
+
+            LV_CHAR = '?'.
+
         ENDTRY.
+
       ENDIF.
-      IF lv_char = ' '.
-        REPLACE SECTION OFFSET lv_off LENGTH 6 OF rv_value WITH ` `.
+      IF LV_CHAR EQ ' '.
+
+        REPLACE SECTION OFFSET LV_OFF LENGTH 6 OF RV_VALUE WITH ` `.
+
       ELSE.
-        REPLACE SECTION OFFSET lv_off LENGTH 6 OF rv_value
-                WITH lv_char.
+
+        REPLACE SECTION OFFSET LV_OFF LENGTH 6 OF RV_VALUE
+                WITH LV_CHAR.
+
       ENDIF.
+
     ENDDO.
-    REPLACE ALL OCCURRENCES OF lv_mark IN rv_value WITH `\`.
+    REPLACE ALL OCCURRENCES OF LV_MARK IN RV_VALUE WITH `\`.
+
   ENDMETHOD.
 
+  METHOD CHILD_PATH.
 
-  METHOD child_path.
-    IF iv_path IS INITIAL.
-      rv_path = iv_name.
+    IF IV_PATH IS INITIAL.
+
+      RV_PATH = IV_NAME.
+
     ELSE.
-      CONCATENATE iv_path `/` iv_name INTO rv_path.
+
+      CONCATENATE IV_PATH `/` IV_NAME INTO RV_PATH.
+
     ENDIF.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * What the program needs from the system: authorization, the SM59
 * destination and HTTP. The unit tests replace it with a double, so
 * they never reach Netgsm.
 *----------------------------------------------------------------------*
-INTERFACE lif_sms_backend.
-  METHODS has_authority
+INTERFACE LIF_SMS_BACKEND.
+  METHODS HAS_AUTHORITY
     IMPORTING
-      iv_destination TYPE rfcdest
+      IV_DESTINATION TYPE RFCDEST
     RETURNING
-      value(rv_yes)  TYPE abap_bool.
+      VALUE(RV_YES)  TYPE ABAP_BOOL.
 
   "! Type of the SM59 destination, initial when it does not exist
-  METHODS destination_type
+  METHODS DESTINATION_TYPE
     IMPORTING
-      iv_destination TYPE rfcdest
+      IV_DESTINATION TYPE RFCDEST
     RETURNING
-      value(rv_type) TYPE rfcdes-rfctype.
+      VALUE(RV_TYPE) TYPE RFCDES-RFCTYPE.
 
   "! Raises lcx_sms only when no answer came back
-  METHODS call
+  METHODS CALL
     IMPORTING
-      iv_destination TYPE rfcdest
-      iv_method      TYPE string
-      iv_path        TYPE string
-      iv_body        TYPE string OPTIONAL
+      IV_DESTINATION TYPE RFCDEST
+      IV_METHOD      TYPE STRING
+      IV_PATH        TYPE STRING
+      IV_BODY        TYPE STRING OPTIONAL
     RETURNING
-      value(rs_http) TYPE lif_sms=>ty_http
+      VALUE(RS_HTTP) TYPE LIF_SMS=>TY_HTTP
     RAISING
-      lcx_sms.
+      LCX_SMS.
 ENDINTERFACE.
 
-
-CLASS lcl_sms_backend DEFINITION FINAL.
+CLASS LCL_SMS_BACKEND DEFINITION FINAL.
   PUBLIC SECTION.
-    INTERFACES lif_sms_backend.
+    INTERFACES LIF_SMS_BACKEND.
 ENDCLASS.
 
+CLASS LCL_SMS_BACKEND IMPLEMENTATION.
 
-CLASS lcl_sms_backend IMPLEMENTATION.
+  METHOD LIF_SMS_BACKEND~HAS_AUTHORITY.
 
-  METHOD lif_sms_backend~has_authority.
     AUTHORITY-CHECK OBJECT 'S_ICF'
       ID 'ICF_FIELD' FIELD 'DEST'
-      ID 'ICF_VALUE' FIELD iv_destination.
-    IF sy-subrc = 0.
-      rv_yes = abap_true.
+      ID 'ICF_VALUE' FIELD IV_DESTINATION.
+    IF SY-SUBRC EQ 0.
+
+      RV_YES = ABAP_TRUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD LIF_SMS_BACKEND~DESTINATION_TYPE.
 
-  METHOD lif_sms_backend~destination_type.
-    SELECT SINGLE rfctype FROM rfcdes INTO rv_type
-           WHERE rfcdest = iv_destination.
-    IF sy-subrc <> 0.
-      CLEAR rv_type.
+    SELECT SINGLE RFCTYPE
+      FROM RFCDES
+      INTO RV_TYPE
+      WHERE RFCDEST EQ IV_DESTINATION.
+    IF SY-SUBRC NE 0.
+
+      CLEAR RV_TYPE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD LIF_SMS_BACKEND~CALL.
 
-  METHOD lif_sms_backend~call.
-    DATA lo_client TYPE REF TO if_http_client.
-    DATA lo_out TYPE REF TO cl_abap_conv_out_ce.
-    DATA lo_in TYPE REF TO cl_abap_conv_in_ce.
-    DATA lv_data TYPE xstring.
-    DATA lv_code TYPE i.
-    DATA lv_message TYPE string.
-    DATA lv_rest TYPE string.
-    DATA lv_text TYPE string.
+    DATA: LO_CLIENT TYPE REF TO IF_HTTP_CLIENT,
+          LO_OUT    TYPE REF TO CL_ABAP_CONV_OUT_CE,
+          LO_IN     TYPE REF TO CL_ABAP_CONV_IN_CE.
 
-    cl_http_client=>create_by_destination(
+    DATA: LV_DATA    TYPE XSTRING,
+          LV_CODE    TYPE I,
+          LV_MESSAGE TYPE STRING,
+          LV_REST    TYPE STRING,
+          LV_TEXT    TYPE STRING.
+
+    CL_HTTP_CLIENT=>CREATE_BY_DESTINATION(
       EXPORTING
-        destination              = iv_destination
+        DESTINATION              = IV_DESTINATION
       IMPORTING
-        client                   = lo_client
+        CLIENT                   = LO_CLIENT
       EXCEPTIONS
-        argument_not_found       = 1
-        destination_not_found    = 2
-        destination_no_authority = 3
-        plugin_not_active        = 4
-        internal_error           = 5
+        ARGUMENT_NOT_FOUND       = 1
+        DESTINATION_NOT_FOUND    = 2
+        DESTINATION_NO_AUTHORITY = 3
+        PLUGIN_NOT_ACTIVE        = 4
+        INTERNAL_ERROR           = 5
         OTHERS                   = 6 ).
-    IF sy-subrc = 3.
-      lv_text = lcl_text=>get( iv_key = 'NO_AUTH'
-                               iv_1   = iv_destination ).
-      RAISE EXCEPTION TYPE lcx_sms
+    IF SY-SUBRC EQ 3.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'NO_AUTH'
+                               IV_1   = IV_DESTINATION ).
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = lif_sms=>code-no_auth
-          text = lv_text.
-    ELSEIF sy-subrc <> 0.
-      lv_text = lcl_text=>get( iv_key = 'NO_DEST'
-                               iv_1   = iv_destination ).
-      RAISE EXCEPTION TYPE lcx_sms
+          CODE = LIF_SMS=>CODE-NO_AUTH
+          TEXT = LV_TEXT.
+
+    ELSEIF SY-SUBRC NE 0.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'NO_DEST'
+                               IV_1   = IV_DESTINATION ).
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = lif_sms=>code-no_dest
-          text = lv_text.
+          CODE = LIF_SMS=>CODE-NO_DEST
+          TEXT = LV_TEXT.
+
     ENDIF.
 
     " A job has no one to answer a logon popup
-    lo_client->propertytype_logon_popup = if_http_client=>co_disabled.
-    lo_client->propertytype_accept_cookie =
-      if_http_client=>co_disabled.
-    lo_client->request->set_method( iv_method ).
-    cl_http_utility=>set_request_uri( request = lo_client->request
-                                      uri     = iv_path ).
-    lo_client->request->set_header_field( name  = 'Accept'
-                                          value = 'application/json' ).
-    IF iv_body IS NOT INITIAL.
-      lo_out = cl_abap_conv_out_ce=>create( encoding = 'UTF-8' ).
-      lo_out->convert( EXPORTING data   = iv_body
-                       IMPORTING buffer = lv_data ).
-      lo_client->request->set_header_field(
-        name  = 'Content-Type'
-        value = 'application/json; charset=utf-8' ).
-      lo_client->request->set_data( lv_data ).
+    LO_CLIENT->PROPERTYTYPE_LOGON_POPUP = IF_HTTP_CLIENT=>CO_DISABLED.
+    LO_CLIENT->PROPERTYTYPE_ACCEPT_COOKIE =
+      IF_HTTP_CLIENT=>CO_DISABLED.
+    LO_CLIENT->REQUEST->SET_METHOD( IV_METHOD ).
+    CL_HTTP_UTILITY=>SET_REQUEST_URI( REQUEST = LO_CLIENT->REQUEST
+                                      URI     = IV_PATH ).
+    LO_CLIENT->REQUEST->SET_HEADER_FIELD( NAME  = 'Accept'
+                                          VALUE = 'application/json' ).
+    IF IV_BODY IS NOT INITIAL.
+
+      LO_OUT = CL_ABAP_CONV_OUT_CE=>CREATE( ENCODING = 'UTF-8' ).
+      LO_OUT->CONVERT( EXPORTING DATA   = IV_BODY
+                       IMPORTING BUFFER = LV_DATA ).
+      LO_CLIENT->REQUEST->SET_HEADER_FIELD(
+        NAME  = 'Content-Type'
+        VALUE = 'application/json; charset=utf-8' ).
+      LO_CLIENT->REQUEST->SET_DATA( LV_DATA ).
+
     ENDIF.
 
-    lo_client->send(
+    LO_CLIENT->SEND(
       EXCEPTIONS
-        http_communication_failure = 1
-        http_invalid_state         = 2
-        http_processing_failed     = 3
-        http_invalid_timeout       = 4
+        HTTP_COMMUNICATION_FAILURE = 1
+        HTTP_INVALID_STATE         = 2
+        HTTP_PROCESSING_FAILED     = 3
+        HTTP_INVALID_TIMEOUT       = 4
         OTHERS                     = 5 ).
-    IF sy-subrc = 0.
-      lo_client->receive(
+    IF SY-SUBRC EQ 0.
+
+      LO_CLIENT->RECEIVE(
         EXCEPTIONS
-          http_communication_failure = 1
-          http_invalid_state         = 2
-          http_processing_failed     = 3
+          HTTP_COMMUNICATION_FAILURE = 1
+          HTTP_INVALID_STATE         = 2
+          HTTP_PROCESSING_FAILED     = 3
           OTHERS                     = 4 ).
+
     ENDIF.
-    IF sy-subrc <> 0.
-      lo_client->get_last_error( IMPORTING message = lv_message ).
-      lo_client->close( ).
-      IF lv_message CS 'PEER_CERT_UNTRUSTED'.
+    IF SY-SUBRC NE 0.
+
+      LO_CLIENT->GET_LAST_ERROR( IMPORTING MESSAGE = LV_MESSAGE ).
+      LO_CLIENT->CLOSE( ).
+      IF LV_MESSAGE CS 'PEER_CERT_UNTRUSTED'.
+
         " The handshake failed, so no request went out
-        lv_text = lcl_text=>get( 'NO_TRUST' ).
-        RAISE EXCEPTION TYPE lcx_sms
+        LV_TEXT = LCL_TEXT=>GET( 'NO_TRUST' ).
+        RAISE EXCEPTION TYPE LCX_SMS
           EXPORTING
-            code = lif_sms=>code-no_trust
-            text = lv_text.
+            CODE = LIF_SMS=>CODE-NO_TRUST
+            TEXT = LV_TEXT.
+
       ENDIF.
       " First line only; the details are in the ICM trace (SMICM)
-      SPLIT lv_message AT cl_abap_char_utilities=>newline
-            INTO lv_message lv_rest.
-      lv_text = lcl_text=>get( iv_key = 'NO_CONN'
-                               iv_1   = lv_message ).
-      RAISE EXCEPTION TYPE lcx_sms
+      SPLIT LV_MESSAGE AT CL_ABAP_CHAR_UTILITIES=>NEWLINE
+            INTO LV_MESSAGE LV_REST.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'NO_CONN'
+                               IV_1   = LV_MESSAGE ).
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = lif_sms=>code-no_conn
-          text = lv_text.
+          CODE = LIF_SMS=>CODE-NO_CONN
+          TEXT = LV_TEXT.
+
     ENDIF.
 
-    lo_client->response->get_status(
+    LO_CLIENT->RESPONSE->GET_STATUS(
       IMPORTING
-        code   = lv_code
-        reason = rs_http-reason ).
-    rs_http-status = lv_code.
-    lv_data = lo_client->response->get_data( ).
-    lo_client->close( ).
-    IF lv_data IS NOT INITIAL.
+        CODE   = LV_CODE
+        REASON = RS_HTTP-REASON ).
+    RS_HTTP-STATUS = LV_CODE.
+    LV_DATA = LO_CLIENT->RESPONSE->GET_DATA( ).
+    LO_CLIENT->CLOSE( ).
+    IF LV_DATA IS NOT INITIAL.
+
       TRY.
-          lo_in = cl_abap_conv_in_ce=>create( encoding = 'UTF-8'
-                                              input    = lv_data ).
-          lo_in->read( IMPORTING data = rs_http-body ).
-        CATCH cx_root.
-          rs_http-body = `(not UTF-8)`.
+
+          LO_IN = CL_ABAP_CONV_IN_CE=>CREATE( ENCODING = 'UTF-8'
+                                              INPUT    = LV_DATA ).
+          LO_IN->READ( IMPORTING DATA = RS_HTTP-BODY ).
+
+        CATCH CX_ROOT.
+
+          RS_HTTP-BODY = `(not UTF-8)`.
+
       ENDTRY.
+
     ENDIF.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Netgsm SMS API v2: every service that works with basic
@@ -2287,3158 +3045,3976 @@ ENDCLASS.
 * search. Not here, because SAP would have to receive calls:
 * forwarding of incoming SMS to a URL, IYS webhook.
 *----------------------------------------------------------------------*
-CLASS lcl_sms_netgsm DEFINITION FINAL.
+CLASS LCL_SMS_NETGSM DEFINITION FINAL.
   PUBLIC SECTION.
-    METHODS constructor
+    METHODS CONSTRUCTOR
       IMPORTING
-        iv_destination     TYPE rfcdest
-                           DEFAULT lif_sms=>default_destination
-        iv_ext_destination TYPE rfcdest
-                           DEFAULT lif_sms=>default_ext_destination
-        io_backend         TYPE REF TO lif_sms_backend OPTIONAL.
+        IV_DESTINATION     TYPE RFCDEST
+                           DEFAULT LIF_SMS=>DEFAULT_DESTINATION
+        IV_EXT_DESTINATION TYPE RFCDEST
+                           DEFAULT LIF_SMS=>DEFAULT_EXT_DESTINATION
+        IO_BACKEND         TYPE REF TO LIF_SMS_BACKEND OPTIONAL.
 
     "! SMS to one or more numbers, now or at a later time
-    METHODS send
+    METHODS SEND
       IMPORTING
-        it_numbers       TYPE string_table
-        iv_text          TYPE csequence
-        iv_header        TYPE csequence
-        iv_encoding      TYPE lif_sms=>ty_encoding
-                         DEFAULT lif_sms=>encoding-auto
-        iv_iys           TYPE lif_sms=>ty_iys DEFAULT lif_sms=>iys-info
-        is_schedule      TYPE lif_sms=>ty_schedule OPTIONAL
-        iv_reference     TYPE csequence OPTIONAL
-        iv_dry_run       TYPE abap_bool DEFAULT abap_true
+        IT_NUMBERS       TYPE STRING_TABLE
+        IV_TEXT          TYPE CSEQUENCE
+        IV_HEADER        TYPE CSEQUENCE
+        IV_ENCODING      TYPE LIF_SMS=>TY_ENCODING
+                         DEFAULT LIF_SMS=>ENCODING-AUTO
+        IV_IYS           TYPE LIF_SMS=>TY_IYS DEFAULT LIF_SMS=>IYS-INFO
+        IS_SCHEDULE      TYPE LIF_SMS=>TY_SCHEDULE OPTIONAL
+        IV_REFERENCE     TYPE CSEQUENCE OPTIONAL
+        IV_DRY_RUN       TYPE ABAP_BOOL DEFAULT ABAP_TRUE
       RETURNING
-        value(rs_result) TYPE lif_sms=>ty_result.
+        VALUE(RS_RESULT) TYPE LIF_SMS=>TY_RESULT.
 
     "! OTP SMS: one number, one part, no Turkish letters
-    METHODS send_otp
+    METHODS SEND_OTP
       IMPORTING
-        it_numbers       TYPE string_table
-        iv_text          TYPE csequence
-        iv_header        TYPE csequence
-        iv_ascii         TYPE abap_bool DEFAULT abap_false
-        iv_dry_run       TYPE abap_bool DEFAULT abap_true
+        IT_NUMBERS       TYPE STRING_TABLE
+        IV_TEXT          TYPE CSEQUENCE
+        IV_HEADER        TYPE CSEQUENCE
+        IV_ASCII         TYPE ABAP_BOOL DEFAULT ABAP_FALSE
+        IV_DRY_RUN       TYPE ABAP_BOOL DEFAULT ABAP_TRUE
       RETURNING
-        value(rs_result) TYPE lif_sms=>ty_result.
+        VALUE(RS_RESULT) TYPE LIF_SMS=>TY_RESULT.
 
     "! Template SMS: a template approved at Netgsm, with values
-    METHODS send_template
+    METHODS SEND_TEMPLATE
       IMPORTING
-        it_numbers       TYPE string_table
-        iv_template_id   TYPE i
-        it_params        TYPE lif_sms=>ty_params
-        iv_header        TYPE csequence
-        iv_encoding      TYPE lif_sms=>ty_encoding
-                         DEFAULT lif_sms=>encoding-auto
-        iv_iys           TYPE lif_sms=>ty_iys DEFAULT lif_sms=>iys-info
-        is_schedule      TYPE lif_sms=>ty_schedule OPTIONAL
-        iv_reference     TYPE csequence OPTIONAL
-        iv_dry_run       TYPE abap_bool DEFAULT abap_true
+        IT_NUMBERS       TYPE STRING_TABLE
+        IV_TEMPLATE_ID   TYPE I
+        IT_PARAMS        TYPE LIF_SMS=>TY_PARAMS
+        IV_HEADER        TYPE CSEQUENCE
+        IV_ENCODING      TYPE LIF_SMS=>TY_ENCODING
+                         DEFAULT LIF_SMS=>ENCODING-AUTO
+        IV_IYS           TYPE LIF_SMS=>TY_IYS DEFAULT LIF_SMS=>IYS-INFO
+        IS_SCHEDULE      TYPE LIF_SMS=>TY_SCHEDULE OPTIONAL
+        IV_REFERENCE     TYPE CSEQUENCE OPTIONAL
+        IV_DRY_RUN       TYPE ABAP_BOOL DEFAULT ABAP_TRUE
       RETURNING
-        value(rs_result) TYPE lif_sms=>ty_result.
+        VALUE(RS_RESULT) TYPE LIF_SMS=>TY_RESULT.
 
     "! Cancels a scheduled SMS
-    METHODS cancel
+    METHODS CANCEL
       IMPORTING
-        iv_jobid         TYPE csequence
+        IV_JOBID         TYPE CSEQUENCE
       RETURNING
-        value(rs_answer) TYPE lif_sms=>ty_answer.
+        VALUE(RS_ANSWER) TYPE LIF_SMS=>TY_ANSWER.
 
     "! Delivery report by job IDs, a date range, or both
-    METHODS report
+    METHODS REPORT
       IMPORTING
-        it_jobids        TYPE string_table OPTIONAL
-        iv_from          TYPE d OPTIONAL
-        iv_to            TYPE d OPTIONAL
-        iv_page          TYPE i OPTIONAL
-        iv_page_size     TYPE i OPTIONAL
+        IT_JOBIDS        TYPE STRING_TABLE OPTIONAL
+        IV_FROM          TYPE D OPTIONAL
+        IV_TO            TYPE D OPTIONAL
+        IV_PAGE          TYPE I OPTIONAL
+        IV_PAGE_SIZE     TYPE I OPTIONAL
       RETURNING
-        value(rs_report) TYPE lif_sms=>ty_report.
+        VALUE(RS_REPORT) TYPE LIF_SMS=>TY_REPORT.
 
     "! Totals of one job: status, parts, credits
-    METHODS stats
+    METHODS STATS
       IMPORTING
-        iv_jobid        TYPE csequence
-        iv_send_date    TYPE d OPTIONAL
+        IV_JOBID        TYPE CSEQUENCE
+        IV_SEND_DATE    TYPE D OPTIONAL
       RETURNING
-        value(rs_stats) TYPE lif_sms=>ty_stats.
+        VALUE(RS_STATS) TYPE LIF_SMS=>TY_STATS.
 
     "! SMS sent to your Netgsm number. Without dates Netgsm returns
     "! only the ones not listed before, and marks them as listed.
-    METHODS inbox
+    METHODS INBOX
       IMPORTING
-        iv_from         TYPE d OPTIONAL
-        iv_to           TYPE d OPTIONAL
-        iv_full_numbers TYPE abap_bool DEFAULT abap_false
+        IV_FROM         TYPE D OPTIONAL
+        IV_TO           TYPE D OPTIONAL
+        IV_FULL_NUMBERS TYPE ABAP_BOOL DEFAULT ABAP_FALSE
       RETURNING
-        value(rs_inbox) TYPE lif_sms=>ty_inbox.
+        VALUE(RS_INBOX) TYPE LIF_SMS=>TY_INBOX.
 
-    METHODS headers
+    METHODS HEADERS
       RETURNING
-        value(rs_headers) TYPE lif_sms=>ty_headers.
+        VALUE(RS_HEADERS) TYPE LIF_SMS=>TY_HEADERS.
 
-    METHODS templates
+    METHODS TEMPLATES
       IMPORTING
-        iv_page             TYPE i DEFAULT 0
-        iv_size             TYPE i DEFAULT 50
-        iv_public           TYPE abap_bool DEFAULT abap_true
-        iv_search           TYPE csequence OPTIONAL
-        iv_type             TYPE csequence OPTIONAL
-        iv_content          TYPE csequence OPTIONAL
+        IV_PAGE             TYPE I DEFAULT 0
+        IV_SIZE             TYPE I DEFAULT 50
+        IV_PUBLIC           TYPE ABAP_BOOL DEFAULT ABAP_TRUE
+        IV_SEARCH           TYPE CSEQUENCE OPTIONAL
+        IV_TYPE             TYPE CSEQUENCE OPTIONAL
+        IV_CONTENT          TYPE CSEQUENCE OPTIONAL
       RETURNING
-        value(rs_templates) TYPE lif_sms=>ty_templates.
+        VALUE(RS_TEMPLATES) TYPE LIF_SMS=>TY_TEMPLATES.
 
     "! Netgsm's own count of parts and characters (free)
-    METHODS length
+    METHODS LENGTH
       IMPORTING
-        iv_text          TYPE csequence
-        iv_encoding      TYPE lif_sms=>ty_encoding
-                         DEFAULT lif_sms=>encoding-auto
-        iv_header        TYPE csequence OPTIONAL
+        IV_TEXT          TYPE CSEQUENCE
+        IV_ENCODING      TYPE LIF_SMS=>TY_ENCODING
+                         DEFAULT LIF_SMS=>ENCODING-AUTO
+        IV_HEADER        TYPE CSEQUENCE OPTIONAL
       RETURNING
-        value(rs_length) TYPE lif_sms=>ty_length.
+        VALUE(RS_LENGTH) TYPE LIF_SMS=>TY_LENGTH.
 
     "! Text for a Netgsm code; the same code means different
     "! things in different services
-    CLASS-METHODS code_text
+    CLASS-METHODS CODE_TEXT
       IMPORTING
-        iv_action      TYPE lif_sms=>ty_action
-        iv_code        TYPE csequence
-        iv_description TYPE csequence OPTIONAL
+        IV_ACTION      TYPE LIF_SMS=>TY_ACTION
+        IV_CODE        TYPE CSEQUENCE
+        IV_DESCRIPTION TYPE CSEQUENCE OPTIONAL
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
     "! Date and time in one of Netgsm's formats:
     "! DMYHM ddMMyyyyHHmm, ISO_M yyyy-MM-dd HH:mm,
     "! DOT_S dd.MM.yyyy HH:mm:ss, ISO_S yyyy-MM-dd HH:mm:ss
-    CLASS-METHODS format_time
+    CLASS-METHODS FORMAT_TIME
       IMPORTING
-        iv_date        TYPE d
-        iv_time        TYPE t
-        iv_style       TYPE c
+        IV_DATE        TYPE D
+        IV_TIME        TYPE T
+        IV_STYLE       TYPE C
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
     "! Milliseconds since 1970 (UTC) as Turkish time dd.MM.yyyy ...
-    CLASS-METHODS turkish_time
+    CLASS-METHODS TURKISH_TIME
       IMPORTING
-        iv_millis      TYPE csequence
+        IV_MILLIS      TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
     "! Percent-encoding for a URL query value (UTF-8)
-    CLASS-METHODS url_encode
+    CLASS-METHODS URL_ENCODE
       IMPORTING
-        iv_text        TYPE csequence
+        IV_TEXT        TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
   PRIVATE SECTION.
-    DATA mv_destination TYPE rfcdest.
-    DATA mv_ext_destination TYPE rfcdest.
-    DATA mo_backend TYPE REF TO lif_sms_backend.
+    DATA MV_DESTINATION TYPE RFCDEST.
+    DATA MV_EXT_DESTINATION TYPE RFCDEST.
+    DATA MO_BACKEND TYPE REF TO LIF_SMS_BACKEND.
 
     "! Checks access, calls Netgsm, reads the answer. Never raises.
-    METHODS call_netgsm
+    METHODS CALL_NETGSM
       IMPORTING
-        iv_action      TYPE lif_sms=>ty_action
-        iv_destination TYPE rfcdest
-        iv_method      TYPE string
-        iv_path        TYPE string
-        iv_body        TYPE string OPTIONAL
+        IV_ACTION      TYPE LIF_SMS=>TY_ACTION
+        IV_DESTINATION TYPE RFCDEST
+        IV_METHOD      TYPE STRING
+        IV_PATH        TYPE STRING
+        IV_BODY        TYPE STRING OPTIONAL
       EXPORTING
-        ev_code        TYPE string
-        ev_message     TYPE string
-        et_values      TYPE lcl_sms_json=>ty_values
-        ev_status      TYPE i.
+        EV_CODE        TYPE STRING
+        EV_MESSAGE     TYPE STRING
+        ET_VALUES      TYPE LCL_SMS_JSON=>TY_VALUES
+        EV_STATUS      TYPE I.
 
     "! Destination exists, has type G, and the user may use it
-    METHODS check_access
+    METHODS CHECK_ACCESS
       IMPORTING
-        iv_destination TYPE rfcdest
+        IV_DESTINATION TYPE RFCDEST
       EXPORTING
-        ev_code        TYPE string
-        ev_message     TYPE string.
+        EV_CODE        TYPE STRING
+        EV_MESSAGE     TYPE STRING.
 
     "! Reads code, description and values; plain codes too
-    METHODS read_answer
+    METHODS READ_ANSWER
       IMPORTING
-        is_http        TYPE lif_sms=>ty_http
+        IS_HTTP        TYPE LIF_SMS=>TY_HTTP
       EXPORTING
-        ev_code        TYPE string
-        ev_description TYPE string
-        et_values      TYPE lcl_sms_json=>ty_values
+        EV_CODE        TYPE STRING
+        EV_DESCRIPTION TYPE STRING
+        ET_VALUES      TYPE LCL_SMS_JSON=>TY_VALUES
       RAISING
-        lcx_sms.
+        LCX_SMS.
 
     "! The checks shared by all sends; they set cs_result-code
     "! when something is wrong
-    METHODS check_numbers
+    METHODS CHECK_NUMBERS
       IMPORTING
-        it_numbers TYPE string_table
-        iv_max     TYPE i
+        IT_NUMBERS TYPE STRING_TABLE
+        IV_MAX     TYPE I
       CHANGING
-        cs_result  TYPE lif_sms=>ty_result.
+        CS_RESULT  TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS check_header
+    METHODS CHECK_HEADER
       CHANGING
-        cs_result TYPE lif_sms=>ty_result.
+        CS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS check_iys
+    METHODS CHECK_IYS
       CHANGING
-        cs_result TYPE lif_sms=>ty_result.
+        CS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS check_schedule
+    METHODS CHECK_SCHEDULE
       CHANGING
-        cs_result TYPE lif_sms=>ty_result.
+        CS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS check_range
+    METHODS CHECK_RANGE
       IMPORTING
-        iv_from    TYPE d
-        iv_to      TYPE d
-        iv_days    TYPE i
+        IV_FROM    TYPE D
+        IV_TO      TYPE D
+        IV_DAYS    TYPE I
       EXPORTING
-        ev_code    TYPE string
-        ev_message TYPE string.
+        EV_CODE    TYPE STRING
+        EV_MESSAGE TYPE STRING.
 
     "! Sends a prepared body, or stops at the preview
-    METHODS finish_send
+    METHODS FINISH_SEND
       IMPORTING
-        iv_destination TYPE rfcdest
-        iv_path        TYPE string
-        iv_body        TYPE string
-        iv_dry_run     TYPE abap_bool
+        IV_DESTINATION TYPE RFCDEST
+        IV_PATH        TYPE STRING
+        IV_BODY        TYPE STRING
+        IV_DRY_RUN     TYPE ABAP_BOOL
       CHANGING
-        cs_result      TYPE lif_sms=>ty_result.
+        CS_RESULT      TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS send_body
+    METHODS SEND_BODY
       IMPORTING
-        is_result      TYPE lif_sms=>ty_result
-        iv_masked      TYPE abap_bool
+        IS_RESULT      TYPE LIF_SMS=>TY_RESULT
+        IV_MASKED      TYPE ABAP_BOOL
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
-    METHODS otp_body
+    METHODS OTP_BODY
       IMPORTING
-        is_result      TYPE lif_sms=>ty_result
+        IS_RESULT      TYPE LIF_SMS=>TY_RESULT
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
-    METHODS template_body
+    METHODS TEMPLATE_BODY
       IMPORTING
-        is_result      TYPE lif_sms=>ty_result
-        it_params      TYPE lif_sms=>ty_params
-        iv_ascii       TYPE abap_bool
-        iv_masked      TYPE abap_bool
+        IS_RESULT      TYPE LIF_SMS=>TY_RESULT
+        IT_PARAMS      TYPE LIF_SMS=>TY_PARAMS
+        IV_ASCII       TYPE ABAP_BOOL
+        IV_MASKED      TYPE ABAP_BOOL
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
     "! ,"startdate":"...","stopdate":"..." or nothing
-    CLASS-METHODS schedule_json
+    CLASS-METHODS SCHEDULE_JSON
       IMPORTING
-        is_schedule    TYPE lif_sms=>ty_schedule
-        iv_style       TYPE c
+        IS_SCHEDULE    TYPE LIF_SMS=>TY_SCHEDULE
+        IV_STYLE       TYPE C
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
-    CLASS-METHODS reference_json
+    CLASS-METHODS REFERENCE_JSON
       IMPORTING
-        iv_reference   TYPE string
+        IV_REFERENCE   TYPE STRING
       RETURNING
-        value(rv_json) TYPE string.
+        VALUE(RV_JSON) TYPE STRING.
 
-    CLASS-METHODS row_path
+    CLASS-METHODS ROW_PATH
       IMPORTING
-        iv_list        TYPE csequence
-        iv_row         TYPE i
-        iv_field       TYPE csequence
+        IV_LIST        TYPE CSEQUENCE
+        IV_ROW         TYPE I
+        IV_FIELD       TYPE CSEQUENCE
       RETURNING
-        value(rv_path) TYPE string.
+        VALUE(RV_PATH) TYPE STRING.
 
-    CLASS-METHODS int_text
+    CLASS-METHODS INT_TEXT
       IMPORTING
-        iv_value       TYPE i
+        IV_VALUE       TYPE I
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS status_text
+    CLASS-METHODS STATUS_TEXT
       IMPORTING
-        iv_status      TYPE csequence
+        IV_STATUS      TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS stats_text
+    CLASS-METHODS STATS_TEXT
       IMPORTING
-        iv_status      TYPE csequence
+        IV_STATUS      TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS error_text
+    CLASS-METHODS ERROR_TEXT
       IMPORTING
-        iv_error       TYPE csequence
+        IV_ERROR       TYPE CSEQUENCE
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS operator_name
+    CLASS-METHODS OPERATOR_NAME
       IMPORTING
-        iv_operator    TYPE csequence
+        IV_OPERATOR    TYPE CSEQUENCE
       RETURNING
-        value(rv_name) TYPE string.
+        VALUE(RV_NAME) TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_SMS_NETGSM IMPLEMENTATION.
 
-CLASS lcl_sms_netgsm IMPLEMENTATION.
+  METHOD CONSTRUCTOR.
 
-  METHOD constructor.
-    mv_destination = iv_destination.
-    mv_ext_destination = iv_ext_destination.
-    IF io_backend IS BOUND.
-      mo_backend = io_backend.
+    MV_DESTINATION = IV_DESTINATION.
+    MV_EXT_DESTINATION = IV_EXT_DESTINATION.
+    IF IO_BACKEND IS BOUND.
+
+      MO_BACKEND = IO_BACKEND.
+
     ELSE.
-      CREATE OBJECT mo_backend TYPE lcl_sms_backend.
+
+      CREATE OBJECT MO_BACKEND TYPE LCL_SMS_BACKEND.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SEND.
 
-  METHOD send.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
+    DATA: LV_BODY TYPE STRING,
+          LV_PATH TYPE STRING.
 
-    rs_result-action = lif_sms=>action-send.
-    rs_result-header = iv_header.
-    rs_result-iys = iv_iys.
-    rs_result-schedule = is_schedule.
-    rs_result-reference = iv_reference.
+    RS_RESULT-ACTION = LIF_SMS=>ACTION-SEND.
+    RS_RESULT-HEADER = IV_HEADER.
+    RS_RESULT-IYS = IV_IYS.
+    RS_RESULT-SCHEDULE = IS_SCHEDULE.
+    RS_RESULT-REFERENCE = IV_REFERENCE.
 
-    check_numbers( EXPORTING it_numbers = it_numbers
-                             iv_max     = lif_sms=>max_recipients
-                   CHANGING  cs_result  = rs_result ).
-    IF rs_result-code IS INITIAL.
-      check_header( CHANGING cs_result = rs_result ).
+    CHECK_NUMBERS( EXPORTING IT_NUMBERS = IT_NUMBERS
+                             IV_MAX     = LIF_SMS=>MAX_RECIPIENTS
+                   CHANGING  CS_RESULT  = RS_RESULT ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_HEADER( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS INITIAL.
-      check_iys( CHANGING cs_result = rs_result ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_IYS( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS INITIAL.
-      check_schedule( CHANGING cs_result = rs_result ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_SCHEDULE( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS NOT INITIAL.
+    IF RS_RESULT-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
 
-    rs_result-text_info = lcl_sms_text=>analyze(
-                            iv_text     = iv_text
-                            iv_encoding = iv_encoding
-                            iv_header   = rs_result-header ).
-    IF rs_result-text_info-ok = abap_false.
-      rs_result-code = lif_sms=>code-bad_text.
-      rs_result-message = rs_result-text_info-message.
+    RS_RESULT-TEXT_INFO = LCL_SMS_TEXT=>ANALYZE(
+                            IV_TEXT     = IV_TEXT
+                            IV_ENCODING = IV_ENCODING
+                            IV_HEADER   = RS_RESULT-HEADER ).
+    IF RS_RESULT-TEXT_INFO-OK EQ ABAP_FALSE.
+
+      RS_RESULT-CODE = LIF_SMS=>CODE-BAD_TEXT.
+      RS_RESULT-MESSAGE = RS_RESULT-TEXT_INFO-MESSAGE.
       RETURN.
+
     ENDIF.
 
-    rs_result-request = send_body( is_result = rs_result
-                                   iv_masked = abap_true ).
-    lv_body = send_body( is_result = rs_result
-                         iv_masked = abap_false ).
-    CONCATENATE lif_sms=>api_path `/send` INTO lv_path.
-    finish_send( EXPORTING iv_destination = mv_destination
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                           iv_dry_run     = iv_dry_run
-                 CHANGING  cs_result      = rs_result ).
+    RS_RESULT-REQUEST = SEND_BODY( IS_RESULT = RS_RESULT
+                                   IV_MASKED = ABAP_TRUE ).
+    LV_BODY = SEND_BODY( IS_RESULT = RS_RESULT
+                         IV_MASKED = ABAP_FALSE ).
+    CONCATENATE LIF_SMS=>API_PATH `/send` INTO LV_PATH.
+    FINISH_SEND( EXPORTING IV_DESTINATION = MV_DESTINATION
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                           IV_DRY_RUN     = IV_DRY_RUN
+                 CHANGING  CS_RESULT      = RS_RESULT ).
+
   ENDMETHOD.
 
+  METHOD SEND_OTP.
 
-  METHOD send_otp.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
+    DATA: LV_BODY TYPE STRING,
+          LV_PATH TYPE STRING.
 
-    rs_result-action = lif_sms=>action-otp.
-    rs_result-header = iv_header.
-    rs_result-iys = lif_sms=>iys-info.
+    RS_RESULT-ACTION = LIF_SMS=>ACTION-OTP.
+    RS_RESULT-HEADER = IV_HEADER.
+    RS_RESULT-IYS = LIF_SMS=>IYS-INFO.
 
-    check_numbers( EXPORTING it_numbers = it_numbers
-                             iv_max     = 1
-                   CHANGING  cs_result  = rs_result ).
-    IF rs_result-code IS INITIAL.
-      check_header( CHANGING cs_result = rs_result ).
+    CHECK_NUMBERS( EXPORTING IT_NUMBERS = IT_NUMBERS
+                             IV_MAX     = 1
+                   CHANGING  CS_RESULT  = RS_RESULT ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_HEADER( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS NOT INITIAL.
+    IF RS_RESULT-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
 
-    rs_result-text_info = lcl_sms_text=>check_otp(
-                            iv_text   = iv_text
-                            iv_header = rs_result-header
-                            iv_ascii  = iv_ascii ).
-    IF rs_result-text_info-ok = abap_false.
-      rs_result-code = lif_sms=>code-bad_text.
-      rs_result-message = rs_result-text_info-message.
-      CLEAR rs_result-text_info-text.
+    RS_RESULT-TEXT_INFO = LCL_SMS_TEXT=>CHECK_OTP(
+                            IV_TEXT   = IV_TEXT
+                            IV_HEADER = RS_RESULT-HEADER
+                            IV_ASCII  = IV_ASCII ).
+    IF RS_RESULT-TEXT_INFO-OK EQ ABAP_FALSE.
+
+      RS_RESULT-CODE = LIF_SMS=>CODE-BAD_TEXT.
+      RS_RESULT-MESSAGE = RS_RESULT-TEXT_INFO-MESSAGE.
+      CLEAR RS_RESULT-TEXT_INFO-TEXT.
       RETURN.
+
     ENDIF.
 
-    lv_body = otp_body( rs_result ).
-    CLEAR rs_result-text_info-text.
-    CONCATENATE lif_sms=>api_path `/otp` INTO lv_path.
-    finish_send( EXPORTING iv_destination = mv_destination
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                           iv_dry_run     = iv_dry_run
-                 CHANGING  cs_result      = rs_result ).
+    LV_BODY = OTP_BODY( RS_RESULT ).
+    CLEAR RS_RESULT-TEXT_INFO-TEXT.
+    CONCATENATE LIF_SMS=>API_PATH `/otp` INTO LV_PATH.
+    FINISH_SEND( EXPORTING IV_DESTINATION = MV_DESTINATION
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                           IV_DRY_RUN     = IV_DRY_RUN
+                 CHANGING  CS_RESULT      = RS_RESULT ).
+
   ENDMETHOD.
 
+  METHOD SEND_TEMPLATE.
 
-  METHOD send_template.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
-    DATA lv_ascii TYPE abap_bool.
-    DATA ls_param TYPE lif_sms=>ty_param.
+    DATA LS_PARAM TYPE LIF_SMS=>TY_PARAM.
 
-    rs_result-action = lif_sms=>action-template.
-    rs_result-header = iv_header.
-    rs_result-iys = iv_iys.
-    rs_result-schedule = is_schedule.
-    rs_result-reference = iv_reference.
-    rs_result-template_id = iv_template_id.
+    DATA: LV_BODY  TYPE STRING,
+          LV_PATH  TYPE STRING,
+          LV_ASCII TYPE ABAP_BOOL.
 
-    check_numbers( EXPORTING it_numbers = it_numbers
-                             iv_max     = lif_sms=>max_recipients
-                   CHANGING  cs_result  = rs_result ).
-    IF rs_result-code IS INITIAL.
-      check_header( CHANGING cs_result = rs_result ).
+    RS_RESULT-ACTION = LIF_SMS=>ACTION-TEMPLATE.
+    RS_RESULT-HEADER = IV_HEADER.
+    RS_RESULT-IYS = IV_IYS.
+    RS_RESULT-SCHEDULE = IS_SCHEDULE.
+    RS_RESULT-REFERENCE = IV_REFERENCE.
+    RS_RESULT-TEMPLATE_ID = IV_TEMPLATE_ID.
+
+    CHECK_NUMBERS( EXPORTING IT_NUMBERS = IT_NUMBERS
+                             IV_MAX     = LIF_SMS=>MAX_RECIPIENTS
+                   CHANGING  CS_RESULT  = RS_RESULT ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_HEADER( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS INITIAL.
-      check_iys( CHANGING cs_result = rs_result ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_IYS( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS INITIAL.
-      check_schedule( CHANGING cs_result = rs_result ).
+    IF RS_RESULT-CODE IS INITIAL.
+
+      CHECK_SCHEDULE( CHANGING CS_RESULT = RS_RESULT ).
+
     ENDIF.
-    IF rs_result-code IS NOT INITIAL.
+    IF RS_RESULT-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
-    IF iv_template_id <= 0.
-      rs_result-code = lif_sms=>code-bad_input.
-      rs_result-message = lcl_text=>get( 'NO_TEMPLATE' ).
+    IF IV_TEMPLATE_ID LE 0.
+
+      RS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_RESULT-MESSAGE = LCL_TEXT=>GET( 'NO_TEMPLATE' ).
       RETURN.
+
     ENDIF.
-    LOOP AT it_params INTO ls_param WHERE name IS INITIAL.
-      rs_result-code = lif_sms=>code-bad_input.
-      rs_result-message = lcl_text=>get( iv_key = 'BAD_PARAM'
-                                         iv_1   = ls_param-value ).
+    LOOP AT IT_PARAMS INTO LS_PARAM
+         WHERE NAME IS INITIAL.
+
+      RS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_RESULT-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'BAD_PARAM'
+                                         IV_1   = LS_PARAM-VALUE ).
       RETURN.
+
     ENDLOOP.
 
     " The template text is at Netgsm, so the program cannot see
     " which characters it has: AUTO means Turkish, to be safe
-    CASE iv_encoding.
-      WHEN lif_sms=>encoding-auto OR lif_sms=>encoding-turkish.
-        rs_result-text_info-encoding = lif_sms=>encoding-turkish.
-      WHEN lif_sms=>encoding-unicode.
-        rs_result-text_info-encoding = lif_sms=>encoding-unicode.
-      WHEN lif_sms=>encoding-ascii.
-        rs_result-text_info-encoding = lif_sms=>encoding-gsm.
-        lv_ascii = abap_true.
+    CASE IV_ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-AUTO OR LIF_SMS=>ENCODING-TURKISH.
+
+        RS_RESULT-TEXT_INFO-ENCODING = LIF_SMS=>ENCODING-TURKISH.
+
+      WHEN LIF_SMS=>ENCODING-UNICODE.
+
+        RS_RESULT-TEXT_INFO-ENCODING = LIF_SMS=>ENCODING-UNICODE.
+
+      WHEN LIF_SMS=>ENCODING-ASCII.
+
+        RS_RESULT-TEXT_INFO-ENCODING = LIF_SMS=>ENCODING-GSM.
+        LV_ASCII = ABAP_TRUE.
+
       WHEN OTHERS.
-        rs_result-code = lif_sms=>code-bad_input.
-        rs_result-message = lcl_text=>get( iv_key = 'BAD_ENC'
-                                           iv_1   = iv_encoding ).
+
+        RS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+        RS_RESULT-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'BAD_ENC'
+                                           IV_1   = IV_ENCODING ).
         RETURN.
+
     ENDCASE.
 
-    rs_result-request = template_body( is_result = rs_result
-                                       it_params = it_params
-                                       iv_ascii  = lv_ascii
-                                       iv_masked = abap_true ).
-    lv_body = template_body( is_result = rs_result
-                             it_params = it_params
-                             iv_ascii  = lv_ascii
-                             iv_masked = abap_false ).
-    CONCATENATE lif_sms=>api_path `/template/send` INTO lv_path.
-    finish_send( EXPORTING iv_destination = mv_ext_destination
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                           iv_dry_run     = iv_dry_run
-                 CHANGING  cs_result      = rs_result ).
+    RS_RESULT-REQUEST = TEMPLATE_BODY( IS_RESULT = RS_RESULT
+                                       IT_PARAMS = IT_PARAMS
+                                       IV_ASCII  = LV_ASCII
+                                       IV_MASKED = ABAP_TRUE ).
+    LV_BODY = TEMPLATE_BODY( IS_RESULT = RS_RESULT
+                             IT_PARAMS = IT_PARAMS
+                             IV_ASCII  = LV_ASCII
+                             IV_MASKED = ABAP_FALSE ).
+    CONCATENATE LIF_SMS=>API_PATH `/template/send` INTO LV_PATH.
+    FINISH_SEND( EXPORTING IV_DESTINATION = MV_EXT_DESTINATION
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                           IV_DRY_RUN     = IV_DRY_RUN
+                 CHANGING  CS_RESULT      = RS_RESULT ).
+
   ENDMETHOD.
 
+  METHOD CANCEL.
 
-  METHOD cancel.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA lv_status TYPE i.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    rs_answer-jobid = iv_jobid.
-    CONDENSE rs_answer-jobid NO-GAPS.
-    IF rs_answer-jobid IS INITIAL.
-      rs_answer-code = lif_sms=>code-bad_input.
-      rs_answer-message = lcl_text=>get( 'NO_JOB' ).
+    DATA: LV_BODY   TYPE STRING,
+          LV_PATH   TYPE STRING,
+          LV_STATUS TYPE I.
+
+    RS_ANSWER-JOBID = IV_JOBID.
+    CONDENSE RS_ANSWER-JOBID NO-GAPS.
+    IF RS_ANSWER-JOBID IS INITIAL.
+
+      RS_ANSWER-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_ANSWER-MESSAGE = LCL_TEXT=>GET( 'NO_JOB' ).
       RETURN.
+
     ENDIF.
-    lv_body = lcl_sms_json=>escape( rs_answer-jobid ).
-    CONCATENATE `{"jobid":"` lv_body `"}` INTO lv_body.
-    CONCATENATE lif_sms=>api_path `/cancel` INTO lv_path.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-cancel
-                           iv_destination = mv_destination
-                           iv_method      = `POST`
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                 IMPORTING ev_code        = rs_answer-code
-                           ev_message     = rs_answer-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
+    LV_BODY = LCL_SMS_JSON=>ESCAPE( RS_ANSWER-JOBID ).
+    CONCATENATE `{"jobid":"` LV_BODY `"}` INTO LV_BODY.
+    CONCATENATE LIF_SMS=>API_PATH `/cancel` INTO LV_PATH.
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-CANCEL
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `POST`
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                 IMPORTING EV_CODE        = RS_ANSWER-CODE
+                           EV_MESSAGE     = RS_ANSWER-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
+
   ENDMETHOD.
 
+  METHOD REPORT.
 
-  METHOD report.
-    DATA lv_jobid TYPE string.
-    DATA lv_jobs TYPE string.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_count TYPE i.
-    DATA lv_row TYPE i.
-    DATA lv_status TYPE i.
-    DATA lv_value TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA ls_line TYPE lif_sms=>ty_report_line.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    LOOP AT it_jobids INTO lv_jobid.
-      CONDENSE lv_jobid NO-GAPS.
-      IF lv_jobid IS INITIAL.
+    DATA LS_LINE TYPE LIF_SMS=>TY_REPORT_LINE.
+
+    DATA: LV_JOBID  TYPE STRING,
+          LV_JOBS   TYPE STRING,
+          LV_BODY   TYPE STRING,
+          LV_PATH   TYPE STRING,
+          LV_TEXT   TYPE STRING,
+          LV_COUNT  TYPE I,
+          LV_ROW    TYPE I,
+          LV_STATUS TYPE I,
+          LV_VALUE  TYPE STRING.
+
+    LOOP AT IT_JOBIDS INTO LV_JOBID.
+
+      CONDENSE LV_JOBID NO-GAPS.
+      IF LV_JOBID IS INITIAL.
+
         CONTINUE.
+
       ENDIF.
-      lv_count = lv_count + 1.
-      lv_jobid = lcl_sms_json=>escape( lv_jobid ).
-      IF lv_count = 1.
-        CONCATENATE `"jobids":["` lv_jobid `"` INTO lv_jobs.
+      LV_COUNT = LV_COUNT + 1.
+      LV_JOBID = LCL_SMS_JSON=>ESCAPE( LV_JOBID ).
+      IF LV_COUNT EQ 1.
+
+        CONCATENATE `"jobids":["` LV_JOBID `"` INTO LV_JOBS.
+
       ELSE.
-        CONCATENATE lv_jobs `,"` lv_jobid `"` INTO lv_jobs.
+
+        CONCATENATE LV_JOBS `,"` LV_JOBID `"` INTO LV_JOBS.
+
       ENDIF.
+
+      CLEAR LV_JOBID.
+
     ENDLOOP.
-    IF lv_count > lif_sms=>max_jobids.
-      lv_text = int_text( lif_sms=>max_jobids ).
-      rs_report-code = lif_sms=>code-bad_input.
-      rs_report-message = lcl_text=>get( iv_key = 'TOO_MANY_JOBS'
-                                         iv_1   = lv_text ).
+
+    CLEAR LV_JOBID.
+    IF LV_COUNT GT LIF_SMS=>MAX_JOBIDS.
+
+      LV_TEXT = INT_TEXT( LIF_SMS=>MAX_JOBIDS ).
+      RS_REPORT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_REPORT-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'TOO_MANY_JOBS'
+                                         IV_1   = LV_TEXT ).
       RETURN.
+
     ENDIF.
-    check_range( EXPORTING iv_from    = iv_from
-                           iv_to      = iv_to
-                           iv_days    = lif_sms=>max_report_days
-                 IMPORTING ev_code    = rs_report-code
-                           ev_message = rs_report-message ).
-    IF rs_report-code IS NOT INITIAL.
+    CHECK_RANGE( EXPORTING IV_FROM    = IV_FROM
+                           IV_TO      = IV_TO
+                           IV_DAYS    = LIF_SMS=>MAX_REPORT_DAYS
+                 IMPORTING EV_CODE    = RS_REPORT-CODE
+                           EV_MESSAGE = RS_REPORT-MESSAGE ).
+    IF RS_REPORT-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
-    IF lv_count = 0 AND iv_from IS INITIAL.
-      rs_report-code = lif_sms=>code-bad_input.
-      rs_report-message = lcl_text=>get( 'NO_CRITERIA' ).
+    IF LV_COUNT EQ 0 AND IV_FROM IS INITIAL.
+
+      RS_REPORT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_REPORT-MESSAGE = LCL_TEXT=>GET( 'NO_CRITERIA' ).
       RETURN.
+
     ENDIF.
 
-    IF lv_count > 0.
-      CONCATENATE lv_jobs `]` INTO lv_body.
+    IF LV_COUNT GT 0.
+
+      CONCATENATE LV_JOBS `]` INTO LV_BODY.
+
     ENDIF.
-    IF iv_from IS NOT INITIAL.
-      lv_text = format_time( iv_date  = iv_from
-                             iv_time  = '000000'
-                             iv_style = 'DOT_S' ).
-      IF lv_body IS NOT INITIAL.
-        CONCATENATE lv_body `,` INTO lv_body.
+    IF IV_FROM IS NOT INITIAL.
+
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IV_FROM
+                             IV_TIME  = '000000'
+                             IV_STYLE = 'DOT_S' ).
+      IF LV_BODY IS NOT INITIAL.
+
+        CONCATENATE LV_BODY `,` INTO LV_BODY.
+
       ENDIF.
-      CONCATENATE lv_body `"startdate":"` lv_text `"` INTO lv_body.
-      lv_text = format_time( iv_date  = iv_to
-                             iv_time  = '235959'
-                             iv_style = 'DOT_S' ).
-      CONCATENATE lv_body `,"stopdate":"` lv_text `"` INTO lv_body.
-    ENDIF.
-    IF iv_page > 0.
-      lv_text = int_text( iv_page ).
-      CONCATENATE lv_body `,"pagenumber":` lv_text INTO lv_body.
-    ENDIF.
-    IF iv_page_size > 0.
-      lv_text = int_text( iv_page_size ).
-      CONCATENATE lv_body `,"pagesize":` lv_text INTO lv_body.
-    ENDIF.
-    CONCATENATE `{` lv_body `}` INTO lv_body.
+      CONCATENATE LV_BODY `"startdate":"` LV_TEXT `"` INTO LV_BODY.
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IV_TO
+                             IV_TIME  = '235959'
+                             IV_STYLE = 'DOT_S' ).
+      CONCATENATE LV_BODY `,"stopdate":"` LV_TEXT `"` INTO LV_BODY.
 
-    CONCATENATE lif_sms=>api_path `/report` INTO lv_path.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-report
-                           iv_destination = mv_destination
-                           iv_method      = `POST`
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                 IMPORTING ev_code        = rs_report-code
-                           ev_message     = rs_report-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
+    ENDIF.
+    IF IV_PAGE GT 0.
+
+      LV_TEXT = INT_TEXT( IV_PAGE ).
+      CONCATENATE LV_BODY `,"pagenumber":` LV_TEXT INTO LV_BODY.
+
+    ENDIF.
+    IF IV_PAGE_SIZE GT 0.
+
+      LV_TEXT = INT_TEXT( IV_PAGE_SIZE ).
+      CONCATENATE LV_BODY `,"pagesize":` LV_TEXT INTO LV_BODY.
+
+    ENDIF.
+    CONCATENATE `{` LV_BODY `}` INTO LV_BODY.
+
+    CONCATENATE LIF_SMS=>API_PATH `/report` INTO LV_PATH.
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-REPORT
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `POST`
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                 IMPORTING EV_CODE        = RS_REPORT-CODE
+                           EV_MESSAGE     = RS_REPORT-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
 
     DO.
-      lv_row = sy-index.
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `status` ).
-      lv_text = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `jobid` ).
-      IF lcl_sms_json=>has( it_values = lt_values
-                            iv_path   = lv_path ) = abap_false
-         AND lcl_sms_json=>has( it_values = lt_values
-                                iv_path   = lv_text ) = abap_false.
+
+      LV_ROW = SY-INDEX.
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `status` ).
+      LV_TEXT = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `jobid` ).
+      IF LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ) EQ ABAP_FALSE
+         AND LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                                IV_PATH   = LV_TEXT ) EQ ABAP_FALSE.
+
         EXIT.
+
       ENDIF.
-      CLEAR ls_line.
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `jobid` ).
-      ls_line-jobid = lcl_sms_json=>value_of( it_values = lt_values
-                                              iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `number` ).
-      lv_value = lcl_sms_json=>value_of( it_values = lt_values
-                                         iv_path   = lv_path ).
-      ls_line-number = lcl_sms_phone=>mask_any( lv_value ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `status` ).
-      ls_line-status = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path   = lv_path ).
-      ls_line-status_text = status_text( ls_line-status ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `operator` ).
-      lv_value = lcl_sms_json=>value_of( it_values = lt_values
-                                         iv_path   = lv_path ).
-      ls_line-operator = operator_name( lv_value ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `errorCode` ).
-      ls_line-error_code = lcl_sms_json=>value_of(
-                             it_values = lt_values
-                             iv_path   = lv_path ).
-      ls_line-error_text = error_text( ls_line-error_code ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `deliveredDate` ).
-      ls_line-delivered = lcl_sms_json=>value_of(
-                            it_values = lt_values
-                            iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `msglen` ).
-      ls_line-msglen = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `jobs` iv_row = lv_row
-                          iv_field = `referansID` ).
-      ls_line-reference = lcl_sms_json=>value_of(
-                            it_values = lt_values
-                            iv_path   = lv_path ).
-      APPEND ls_line TO rs_report-lines.
+      CLEAR LS_LINE.
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `jobid` ).
+      LS_LINE-JOBID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                              IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `number` ).
+      LV_VALUE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                         IV_PATH   = LV_PATH ).
+      LS_LINE-NUMBER = LCL_SMS_PHONE=>MASK_ANY( LV_VALUE ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `status` ).
+      LS_LINE-STATUS = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH   = LV_PATH ).
+      LS_LINE-STATUS_TEXT = STATUS_TEXT( LS_LINE-STATUS ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `operator` ).
+      LV_VALUE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                         IV_PATH   = LV_PATH ).
+      LS_LINE-OPERATOR = OPERATOR_NAME( LV_VALUE ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `errorCode` ).
+      LS_LINE-ERROR_CODE = LCL_SMS_JSON=>VALUE_OF(
+                             IT_VALUES = LT_VALUES
+                             IV_PATH   = LV_PATH ).
+      LS_LINE-ERROR_TEXT = ERROR_TEXT( LS_LINE-ERROR_CODE ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `deliveredDate` ).
+      LS_LINE-DELIVERED = LCL_SMS_JSON=>VALUE_OF(
+                            IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `msglen` ).
+      LS_LINE-MSGLEN = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `jobs` IV_ROW = LV_ROW
+                          IV_FIELD = `referansID` ).
+      LS_LINE-REFERENCE = LCL_SMS_JSON=>VALUE_OF(
+                            IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ).
+      APPEND LS_LINE TO RS_REPORT-LINES.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD STATS.
 
-  METHOD stats.
-    DATA lv_jobid TYPE string.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_row TYPE i.
-    DATA lv_status TYPE i.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA ls_line TYPE lif_sms=>ty_stats_line.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    lv_jobid = iv_jobid.
-    CONDENSE lv_jobid NO-GAPS.
-    IF lv_jobid IS INITIAL.
-      rs_stats-code = lif_sms=>code-bad_input.
-      rs_stats-message = lcl_text=>get( 'NO_JOB' ).
+    DATA LS_LINE TYPE LIF_SMS=>TY_STATS_LINE.
+
+    DATA: LV_JOBID  TYPE STRING,
+          LV_BODY   TYPE STRING,
+          LV_PATH   TYPE STRING,
+          LV_TEXT   TYPE STRING,
+          LV_ROW    TYPE I,
+          LV_STATUS TYPE I.
+
+    LV_JOBID = IV_JOBID.
+    CONDENSE LV_JOBID NO-GAPS.
+    IF LV_JOBID IS INITIAL.
+
+      RS_STATS-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      RS_STATS-MESSAGE = LCL_TEXT=>GET( 'NO_JOB' ).
       RETURN.
-    ENDIF.
-    lv_jobid = lcl_sms_json=>escape( lv_jobid ).
-    CONCATENATE `{"jobid":"` lv_jobid `"` INTO lv_body.
-    IF iv_send_date IS NOT INITIAL.
-      lv_text = format_time( iv_date  = iv_send_date
-                             iv_time  = '000000'
-                             iv_style = 'ISO_S' ).
-      CONCATENATE lv_body `,"senddate":"` lv_text `"` INTO lv_body.
-    ENDIF.
-    CONCATENATE lv_body `}` INTO lv_body.
 
-    CONCATENATE lif_sms=>api_path `/stats` INTO lv_path.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-stats
-                           iv_destination = mv_destination
-                           iv_method      = `POST`
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                 IMPORTING ev_code        = rs_stats-code
-                           ev_message     = rs_stats-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
+    ENDIF.
+    LV_JOBID = LCL_SMS_JSON=>ESCAPE( LV_JOBID ).
+    CONCATENATE `{"jobid":"` LV_JOBID `"` INTO LV_BODY.
+    IF IV_SEND_DATE IS NOT INITIAL.
+
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IV_SEND_DATE
+                             IV_TIME  = '000000'
+                             IV_STYLE = 'ISO_S' ).
+      CONCATENATE LV_BODY `,"senddate":"` LV_TEXT `"` INTO LV_BODY.
+
+    ENDIF.
+    CONCATENATE LV_BODY `}` INTO LV_BODY.
+
+    CONCATENATE LIF_SMS=>API_PATH `/stats` INTO LV_PATH.
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-STATS
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `POST`
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                 IMPORTING EV_CODE        = RS_STATS-CODE
+                           EV_MESSAGE     = RS_STATS-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
 
     DO.
-      lv_row = sy-index.
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `status` ).
-      IF lcl_sms_json=>has( it_values = lt_values
-                            iv_path   = lv_path ) = abap_false.
+
+      LV_ROW = SY-INDEX.
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `status` ).
+      IF LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ) EQ ABAP_FALSE.
+
         EXIT.
+
       ENDIF.
-      CLEAR ls_line.
-      ls_line-status = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path   = lv_path ).
-      ls_line-status_text = stats_text( ls_line-status ).
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `totalSms` ).
-      ls_line-total_sms = lcl_sms_json=>value_of(
-                            it_values = lt_values
-                            iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `totalMessageLength` ).
-      ls_line-total_parts = lcl_sms_json=>value_of(
-                              it_values = lt_values
-                              iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `chargeStatement` ).
-      ls_line-charge = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `statement` ).
-      ls_line-statement = lcl_sms_json=>value_of(
-                            it_values = lt_values
-                            iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `stats` iv_row = lv_row
-                          iv_field = `domestic` ).
-      ls_line-domestic = lcl_sms_json=>value_of(
-                           it_values = lt_values
-                           iv_path   = lv_path ).
-      APPEND ls_line TO rs_stats-lines.
+      CLEAR LS_LINE.
+      LS_LINE-STATUS = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH   = LV_PATH ).
+      LS_LINE-STATUS_TEXT = STATS_TEXT( LS_LINE-STATUS ).
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `totalSms` ).
+      LS_LINE-TOTAL_SMS = LCL_SMS_JSON=>VALUE_OF(
+                            IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `totalMessageLength` ).
+      LS_LINE-TOTAL_PARTS = LCL_SMS_JSON=>VALUE_OF(
+                              IT_VALUES = LT_VALUES
+                              IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `chargeStatement` ).
+      LS_LINE-CHARGE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `statement` ).
+      LS_LINE-STATEMENT = LCL_SMS_JSON=>VALUE_OF(
+                            IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `stats` IV_ROW = LV_ROW
+                          IV_FIELD = `domestic` ).
+      LS_LINE-DOMESTIC = LCL_SMS_JSON=>VALUE_OF(
+                           IT_VALUES = LT_VALUES
+                           IV_PATH   = LV_PATH ).
+      APPEND LS_LINE TO RS_STATS-LINES.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD INBOX.
 
-  METHOD inbox.
-    DATA lv_path TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_row TYPE i.
-    DATA lv_status TYPE i.
-    DATA lv_value TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA ls_line TYPE lif_sms=>ty_inbox_line.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    check_range( EXPORTING iv_from    = iv_from
-                           iv_to      = iv_to
-                           iv_days    = lif_sms=>max_inbox_days
-                 IMPORTING ev_code    = rs_inbox-code
-                           ev_message = rs_inbox-message ).
-    IF rs_inbox-code IS NOT INITIAL.
+    DATA LS_LINE TYPE LIF_SMS=>TY_INBOX_LINE.
+
+    DATA: LV_PATH   TYPE STRING,
+          LV_TEXT   TYPE STRING,
+          LV_ROW    TYPE I,
+          LV_STATUS TYPE I,
+          LV_VALUE  TYPE STRING.
+
+    CHECK_RANGE( EXPORTING IV_FROM    = IV_FROM
+                           IV_TO      = IV_TO
+                           IV_DAYS    = LIF_SMS=>MAX_INBOX_DAYS
+                 IMPORTING EV_CODE    = RS_INBOX-CODE
+                           EV_MESSAGE = RS_INBOX-MESSAGE ).
+    IF RS_INBOX-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
 
-    CONCATENATE lif_sms=>api_path `/inbox` INTO lv_path.
-    IF iv_from IS NOT INITIAL.
-      lv_text = format_time( iv_date  = iv_from
-                             iv_time  = '000000'
-                             iv_style = 'DMYHM' ).
-      CONCATENATE lv_path `?startdate=` lv_text INTO lv_path.
-      lv_text = format_time( iv_date  = iv_to
-                             iv_time  = '235900'
-                             iv_style = 'DMYHM' ).
-      CONCATENATE lv_path `&stopdate=` lv_text INTO lv_path.
+    CONCATENATE LIF_SMS=>API_PATH `/inbox` INTO LV_PATH.
+    IF IV_FROM IS NOT INITIAL.
+
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IV_FROM
+                             IV_TIME  = '000000'
+                             IV_STYLE = 'DMYHM' ).
+      CONCATENATE LV_PATH `?startdate=` LV_TEXT INTO LV_PATH.
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IV_TO
+                             IV_TIME  = '235900'
+                             IV_STYLE = 'DMYHM' ).
+      CONCATENATE LV_PATH `&stopdate=` LV_TEXT INTO LV_PATH.
+
     ENDIF.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-inbox
-                           iv_destination = mv_destination
-                           iv_method      = `GET`
-                           iv_path        = lv_path
-                 IMPORTING ev_code        = rs_inbox-code
-                           ev_message     = rs_inbox-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-INBOX
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `GET`
+                           IV_PATH        = LV_PATH
+                 IMPORTING EV_CODE        = RS_INBOX-CODE
+                           EV_MESSAGE     = RS_INBOX-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
 
     DO.
-      lv_row = sy-index.
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `id` ).
-      IF lcl_sms_json=>has( it_values = lt_values
-                            iv_path   = lv_path ) = abap_false.
+
+      LV_ROW = SY-INDEX.
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `id` ).
+      IF LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ) EQ ABAP_FALSE.
+
         EXIT.
+
       ENDIF.
-      CLEAR ls_line.
-      ls_line-id = lcl_sms_json=>value_of( it_values = lt_values
-                                           iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `gorevId` ).
-      ls_line-jobid = lcl_sms_json=>value_of( it_values = lt_values
-                                              iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `kayittar` ).
-      lv_value = lcl_sms_json=>value_of( it_values = lt_values
-                                         iv_path   = lv_path ).
-      ls_line-received = turkish_time( lv_value ).
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `gonderen` ).
-      lv_value = lcl_sms_json=>value_of( it_values = lt_values
-                                         iv_path   = lv_path ).
-      IF iv_full_numbers = abap_true.
-        ls_line-sender = lv_value.
+      CLEAR LS_LINE.
+      LS_LINE-ID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                           IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `gorevId` ).
+      LS_LINE-JOBID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                              IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `kayittar` ).
+      LV_VALUE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                         IV_PATH   = LV_PATH ).
+      LS_LINE-RECEIVED = TURKISH_TIME( LV_VALUE ).
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `gonderen` ).
+      LV_VALUE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                         IV_PATH   = LV_PATH ).
+      IF IV_FULL_NUMBERS EQ ABAP_TRUE.
+
+        LS_LINE-SENDER = LV_VALUE.
+
       ELSE.
-        ls_line-sender = lcl_sms_phone=>mask_any( lv_value ).
+
+        LS_LINE-SENDER = LCL_SMS_PHONE=>MASK_ANY( LV_VALUE ).
+
       ENDIF.
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `operator` ).
-      ls_line-operator = lcl_sms_json=>value_of(
-                           it_values = lt_values
-                           iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `messages` iv_row = lv_row
-                          iv_field = `mesaj` ).
-      ls_line-text = lcl_sms_json=>value_of( it_values = lt_values
-                                             iv_path   = lv_path ).
-      APPEND ls_line TO rs_inbox-lines.
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `operator` ).
+      LS_LINE-OPERATOR = LCL_SMS_JSON=>VALUE_OF(
+                           IT_VALUES = LT_VALUES
+                           IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `messages` IV_ROW = LV_ROW
+                          IV_FIELD = `mesaj` ).
+      LS_LINE-TEXT = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                             IV_PATH   = LV_PATH ).
+      APPEND LS_LINE TO RS_INBOX-LINES.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD HEADERS.
 
-  METHOD headers.
-    DATA lv_path TYPE string.
-    DATA lv_status TYPE i.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA ls_value TYPE lcl_sms_json=>ty_value.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    CONCATENATE lif_sms=>api_path `/msgheader` INTO lv_path.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-headers
-                           iv_destination = mv_destination
-                           iv_method      = `GET`
-                           iv_path        = lv_path
-                 IMPORTING ev_code        = rs_headers-code
-                           ev_message     = rs_headers-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
-    LOOP AT lt_values INTO ls_value.
-      IF ls_value-path CP 'msgheaders/*'.
-        APPEND ls_value-value TO rs_headers-names.
+    DATA LS_VALUE TYPE LCL_SMS_JSON=>TY_VALUE.
+
+    DATA: LV_PATH   TYPE STRING,
+          LV_STATUS TYPE I.
+
+    CONCATENATE LIF_SMS=>API_PATH `/msgheader` INTO LV_PATH.
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-HEADERS
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `GET`
+                           IV_PATH        = LV_PATH
+                 IMPORTING EV_CODE        = RS_HEADERS-CODE
+                           EV_MESSAGE     = RS_HEADERS-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
+    LOOP AT LT_VALUES INTO LS_VALUE.
+
+      IF LS_VALUE-PATH CP 'msgheaders/*'.
+
+        APPEND LS_VALUE-VALUE TO RS_HEADERS-NAMES.
+
       ENDIF.
+
+      CLEAR LS_VALUE.
+
     ENDLOOP.
+
+    CLEAR LS_VALUE.
+
   ENDMETHOD.
 
+  METHOD TEMPLATES.
 
-  METHOD templates.
-    DATA lv_path TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_row TYPE i.
-    DATA lv_param TYPE i.
-    DATA lv_status TYPE i.
-    DATA lv_name TYPE string.
-    DATA lv_type TYPE string.
-    DATA lv_max TYPE string.
-    DATA lv_prefix TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA ls_line TYPE lif_sms=>ty_template.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    lv_text = int_text( iv_page ).
-    CONCATENATE lif_sms=>api_path `/template/list?page=` lv_text
-                INTO lv_path.
-    lv_text = int_text( iv_size ).
-    CONCATENATE lv_path `&size=` lv_text INTO lv_path.
-    IF iv_public = abap_true.
-      CONCATENATE lv_path `&includePublic=true` INTO lv_path.
+    DATA LS_LINE TYPE LIF_SMS=>TY_TEMPLATE.
+
+    DATA: LV_PATH   TYPE STRING,
+          LV_TEXT   TYPE STRING,
+          LV_ROW    TYPE I,
+          LV_PARAM  TYPE I,
+          LV_STATUS TYPE I,
+          LV_NAME   TYPE STRING,
+          LV_TYPE   TYPE STRING,
+          LV_MAX    TYPE STRING,
+          LV_PREFIX TYPE STRING.
+
+    LV_TEXT = INT_TEXT( IV_PAGE ).
+    CONCATENATE LIF_SMS=>API_PATH `/template/list?page=` LV_TEXT
+      INTO LV_PATH.
+    LV_TEXT = INT_TEXT( IV_SIZE ).
+    CONCATENATE LV_PATH `&size=` LV_TEXT INTO LV_PATH.
+    IF IV_PUBLIC EQ ABAP_TRUE.
+
+      CONCATENATE LV_PATH `&includePublic=true` INTO LV_PATH.
+
     ELSE.
-      CONCATENATE lv_path `&includePublic=false` INTO lv_path.
+
+      CONCATENATE LV_PATH `&includePublic=false` INTO LV_PATH.
+
     ENDIF.
-    IF iv_search IS NOT INITIAL.
-      lv_text = url_encode( iv_search ).
-      CONCATENATE lv_path `&search=` lv_text INTO lv_path.
+    IF IV_SEARCH IS NOT INITIAL.
+
+      LV_TEXT = URL_ENCODE( IV_SEARCH ).
+      CONCATENATE LV_PATH `&search=` LV_TEXT INTO LV_PATH.
+
     ENDIF.
-    IF iv_type IS NOT INITIAL.
-      lv_text = url_encode( iv_type ).
-      CONCATENATE lv_path `&type=` lv_text INTO lv_path.
+    IF IV_TYPE IS NOT INITIAL.
+
+      LV_TEXT = URL_ENCODE( IV_TYPE ).
+      CONCATENATE LV_PATH `&type=` LV_TEXT INTO LV_PATH.
+
     ENDIF.
-    IF iv_content IS NOT INITIAL.
-      lv_text = url_encode( iv_content ).
-      CONCATENATE lv_path `&context=` lv_text INTO lv_path.
+    IF IV_CONTENT IS NOT INITIAL.
+
+      LV_TEXT = URL_ENCODE( IV_CONTENT ).
+      CONCATENATE LV_PATH `&context=` LV_TEXT INTO LV_PATH.
+
     ENDIF.
 
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-templates
-                           iv_destination = mv_ext_destination
-                           iv_method      = `GET`
-                           iv_path        = lv_path
-                 IMPORTING ev_code        = rs_templates-code
-                           ev_message     = rs_templates-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
-    rs_templates-page = lcl_sms_json=>value_of( it_values = lt_values
-                                                iv_path   = `page` ).
-    rs_templates-pages = lcl_sms_json=>value_of(
-                           it_values = lt_values
-                           iv_path   = `totalPages` ).
-    rs_templates-total = lcl_sms_json=>value_of(
-                           it_values = lt_values
-                           iv_path   = `totalElements` ).
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-TEMPLATES
+                           IV_DESTINATION = MV_EXT_DESTINATION
+                           IV_METHOD      = `GET`
+                           IV_PATH        = LV_PATH
+                 IMPORTING EV_CODE        = RS_TEMPLATES-CODE
+                           EV_MESSAGE     = RS_TEMPLATES-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
+    RS_TEMPLATES-PAGE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                                IV_PATH   = `page` ).
+    RS_TEMPLATES-PAGES = LCL_SMS_JSON=>VALUE_OF(
+                           IT_VALUES = LT_VALUES
+                           IV_PATH   = `totalPages` ).
+    RS_TEMPLATES-TOTAL = LCL_SMS_JSON=>VALUE_OF(
+                           IT_VALUES = LT_VALUES
+                           IV_PATH   = `totalElements` ).
 
     DO.
-      lv_row = sy-index.
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `templateId` ).
-      IF lcl_sms_json=>has( it_values = lt_values
-                            iv_path   = lv_path ) = abap_false.
+
+      LV_ROW = SY-INDEX.
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `templateId` ).
+      IF LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                            IV_PATH   = LV_PATH ) EQ ABAP_FALSE.
+
         EXIT.
+
       ENDIF.
-      CLEAR ls_line.
-      ls_line-id = lcl_sms_json=>value_of( it_values = lt_values
-                                           iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `type` ).
-      ls_line-type = lcl_sms_json=>value_of( it_values = lt_values
-                                             iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `description` ).
-      ls_line-description = lcl_sms_json=>value_of(
-                              it_values = lt_values
-                              iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `templateContent` ).
-      ls_line-content = lcl_sms_json=>value_of(
-                          it_values = lt_values
-                          iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `public` ).
-      ls_line-public = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path   = lv_path ).
-      lv_path = row_path( iv_list = `templates` iv_row = lv_row
-                          iv_field = `registryDate` ).
-      ls_line-registered = lcl_sms_json=>value_of(
-                             it_values = lt_values
-                             iv_path   = lv_path ).
+      CLEAR LS_LINE.
+      LS_LINE-ID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                           IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `type` ).
+      LS_LINE-TYPE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                             IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `description` ).
+      LS_LINE-DESCRIPTION = LCL_SMS_JSON=>VALUE_OF(
+                              IT_VALUES = LT_VALUES
+                              IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `templateContent` ).
+      LS_LINE-CONTENT = LCL_SMS_JSON=>VALUE_OF(
+                          IT_VALUES = LT_VALUES
+                          IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `public` ).
+      LS_LINE-PUBLIC = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH   = LV_PATH ).
+      LV_PATH = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                          IV_FIELD = `registryDate` ).
+      LS_LINE-REGISTERED = LCL_SMS_JSON=>VALUE_OF(
+                             IT_VALUES = LT_VALUES
+                             IV_PATH   = LV_PATH ).
       " parameters/n/name, type, maxLength
-      lv_prefix = row_path( iv_list = `templates` iv_row = lv_row
-                            iv_field = `parameters` ).
+      LV_PREFIX = ROW_PATH( IV_LIST = `templates` IV_ROW = LV_ROW
+                            IV_FIELD = `parameters` ).
       DO.
-        lv_param = sy-index.
-        lv_path = row_path( iv_list = lv_prefix iv_row = lv_param
-                            iv_field = `name` ).
-        IF lcl_sms_json=>has( it_values = lt_values
-                              iv_path   = lv_path ) = abap_false.
+
+        LV_PARAM = SY-INDEX.
+        LV_PATH = ROW_PATH( IV_LIST = LV_PREFIX IV_ROW = LV_PARAM
+                            IV_FIELD = `name` ).
+        IF LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                              IV_PATH   = LV_PATH ) EQ ABAP_FALSE.
+
           EXIT.
+
         ENDIF.
-        lv_name = lcl_sms_json=>value_of( it_values = lt_values
-                                          iv_path   = lv_path ).
-        lv_path = row_path( iv_list = lv_prefix iv_row = lv_param
-                            iv_field = `type` ).
-        lv_type = lcl_sms_json=>value_of( it_values = lt_values
-                                          iv_path   = lv_path ).
-        lv_path = row_path( iv_list = lv_prefix iv_row = lv_param
-                            iv_field = `maxLength` ).
-        lv_max = lcl_sms_json=>value_of( it_values = lt_values
-                                         iv_path   = lv_path ).
-        IF lv_max IS NOT INITIAL.
-          CONCATENATE lv_type `, ` lv_max INTO lv_type.
+        LV_NAME = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                          IV_PATH   = LV_PATH ).
+        LV_PATH = ROW_PATH( IV_LIST = LV_PREFIX IV_ROW = LV_PARAM
+                            IV_FIELD = `type` ).
+        LV_TYPE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                          IV_PATH   = LV_PATH ).
+        LV_PATH = ROW_PATH( IV_LIST = LV_PREFIX IV_ROW = LV_PARAM
+                            IV_FIELD = `maxLength` ).
+        LV_MAX = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                         IV_PATH   = LV_PATH ).
+        IF LV_MAX IS NOT INITIAL.
+
+          CONCATENATE LV_TYPE `, ` LV_MAX INTO LV_TYPE.
+
         ENDIF.
-        CONCATENATE lv_name ` (` lv_type `)` INTO lv_name.
-        IF ls_line-parameters IS INITIAL.
-          ls_line-parameters = lv_name.
+        CONCATENATE LV_NAME ` (` LV_TYPE `)` INTO LV_NAME.
+        IF LS_LINE-PARAMETERS IS INITIAL.
+
+          LS_LINE-PARAMETERS = LV_NAME.
+
         ELSE.
-          CONCATENATE ls_line-parameters `; ` lv_name
-                      INTO ls_line-parameters.
+
+          CONCATENATE LS_LINE-PARAMETERS `; ` LV_NAME
+            INTO LS_LINE-PARAMETERS.
+
         ENDIF.
+
       ENDDO.
-      APPEND ls_line TO rs_templates-lines.
+      APPEND LS_LINE TO RS_TEMPLATES-LINES.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD LENGTH.
 
-  METHOD length.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_text TYPE string.
-    DATA lv_body TYPE string.
-    DATA lv_path TYPE string.
-    DATA lv_code TYPE string.
-    DATA lv_status TYPE i.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
 
-    ls_info = lcl_sms_text=>analyze( iv_text     = iv_text
-                                     iv_encoding = iv_encoding
-                                     iv_header   = iv_header ).
-    IF ls_info-encoding IS INITIAL.
-      rs_length-code = lif_sms=>code-bad_text.
-      rs_length-message = ls_info-message.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
+
+    DATA: LV_TEXT   TYPE STRING,
+          LV_BODY   TYPE STRING,
+          LV_PATH   TYPE STRING,
+          LV_CODE   TYPE STRING,
+          LV_STATUS TYPE I.
+
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE( IV_TEXT     = IV_TEXT
+                                     IV_ENCODING = IV_ENCODING
+                                     IV_HEADER   = IV_HEADER ).
+    IF LS_INFO-ENCODING IS INITIAL.
+
+      RS_LENGTH-CODE = LIF_SMS=>CODE-BAD_TEXT.
+      RS_LENGTH-MESSAGE = LS_INFO-MESSAGE.
       RETURN.
+
     ENDIF.
-    rs_length-encoding = ls_info-encoding.
-    CASE ls_info-encoding.
-      WHEN lif_sms=>encoding-turkish.
-        lv_code = `11`.
-      WHEN lif_sms=>encoding-unicode.
-        lv_code = `8`.
+    RS_LENGTH-ENCODING = LS_INFO-ENCODING.
+    CASE LS_INFO-ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-TURKISH.
+
+        LV_CODE = `11`.
+
+      WHEN LIF_SMS=>ENCODING-UNICODE.
+
+        LV_CODE = `8`.
+
       WHEN OTHERS.
-        lv_code = `0`.
+
+        LV_CODE = `0`.
+
     ENDCASE.
-    lv_text = lcl_sms_json=>escape( ls_info-text ).
-    CONCATENATE `{"context":"` lv_text `","encoding":` lv_code
-                INTO lv_body.
-    IF ls_info-suffix > 0.
-      CONCATENATE lv_body `,"customHeader":true}` INTO lv_body.
+    LV_TEXT = LCL_SMS_JSON=>ESCAPE( LS_INFO-TEXT ).
+    CONCATENATE `{"context":"` LV_TEXT `","encoding":` LV_CODE
+      INTO LV_BODY.
+    IF LS_INFO-SUFFIX GT 0.
+
+      CONCATENATE LV_BODY `,"customHeader":true}` INTO LV_BODY.
+
     ELSE.
-      CONCATENATE lv_body `,"customHeader":false}` INTO lv_body.
+
+      CONCATENATE LV_BODY `,"customHeader":false}` INTO LV_BODY.
+
     ENDIF.
 
-    CONCATENATE lif_sms=>api_path `/length` INTO lv_path.
-    call_netgsm( EXPORTING iv_action      = lif_sms=>action-length
-                           iv_destination = mv_destination
-                           iv_method      = `POST`
-                           iv_path        = lv_path
-                           iv_body        = lv_body
-                 IMPORTING ev_code        = rs_length-code
-                           ev_message     = rs_length-message
-                           et_values      = lt_values
-                           ev_status      = lv_status ).
-    rs_length-parts = lcl_sms_json=>value_of( it_values = lt_values
-                                              iv_path   = `parts` ).
-    rs_length-used = lcl_sms_json=>value_of( it_values = lt_values
-                                             iv_path   = `charsUsed` ).
-    rs_length-left = lcl_sms_json=>value_of( it_values = lt_values
-                                             iv_path   = `charsLeft` ).
-    rs_length-left_part = lcl_sms_json=>value_of(
-                            it_values = lt_values
-                            iv_path   = `charsLeftUntilNextPart` ).
+    CONCATENATE LIF_SMS=>API_PATH `/length` INTO LV_PATH.
+    CALL_NETGSM( EXPORTING IV_ACTION      = LIF_SMS=>ACTION-LENGTH
+                           IV_DESTINATION = MV_DESTINATION
+                           IV_METHOD      = `POST`
+                           IV_PATH        = LV_PATH
+                           IV_BODY        = LV_BODY
+                 IMPORTING EV_CODE        = RS_LENGTH-CODE
+                           EV_MESSAGE     = RS_LENGTH-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = LV_STATUS ).
+    RS_LENGTH-PARTS = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                              IV_PATH   = `parts` ).
+    RS_LENGTH-USED = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                             IV_PATH   = `charsUsed` ).
+    RS_LENGTH-LEFT = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                             IV_PATH   = `charsLeft` ).
+    RS_LENGTH-LEFT_PART = LCL_SMS_JSON=>VALUE_OF(
+                            IT_VALUES = LT_VALUES
+                            IV_PATH   = `charsLeftUntilNextPart` ).
+
   ENDMETHOD.
 
+  METHOD CODE_TEXT.
 
-  METHOD code_text.
-    DATA lv_code TYPE string.
-    DATA lv_key TYPE string.
-    DATA lv_prefix TYPE string.
-    DATA lv_value TYPE string.
-    DATA lv_len TYPE i.
+    DATA: LV_CODE   TYPE STRING,
+          LV_KEY    TYPE STRING,
+          LV_PREFIX TYPE STRING,
+          LV_VALUE  TYPE STRING,
+          LV_LEN    TYPE I.
 
-    lv_code = iv_code.
-    lv_len = strlen( lv_code ).
+    LV_CODE = IV_CODE.
+    LV_LEN = STRLEN( LV_CODE ).
     " 100-110: system errors, all the same text
-    IF lv_len = 3 AND lv_code(1) = '1' AND lv_code CO '0123456789'.
-      lv_code = `100`.
+    IF LV_LEN EQ 3 AND LV_CODE(1) EQ '1' AND LV_CODE CO '0123456789'.
+
+      LV_CODE = `100`.
+
     ENDIF.
-    IF iv_action = lif_sms=>action-otp.
-      CASE lv_code.
+    IF IV_ACTION EQ LIF_SMS=>ACTION-OTP.
+
+      CASE LV_CODE.
+
         WHEN `41`.
-          lv_code = `40`.
+
+          LV_CODE = `40`.
+
         WHEN `51` OR `52`.
-          lv_code = `50`.
+
+          LV_CODE = `50`.
+
       ENDCASE.
+
     ENDIF.
 
-    CASE iv_action.
-      WHEN lif_sms=>action-send.
-        lv_prefix = `SEND`.
-      WHEN lif_sms=>action-otp.
-        lv_prefix = `OTP`.
-      WHEN lif_sms=>action-template.
-        lv_prefix = `TPL`.
-      WHEN lif_sms=>action-cancel.
-        lv_prefix = `CANCEL`.
-      WHEN lif_sms=>action-report.
-        lv_prefix = `REPORT`.
-      WHEN lif_sms=>action-inbox.
-        lv_prefix = `INBOX`.
-      WHEN lif_sms=>action-length.
-        lv_prefix = `LENGTH`.
+    CASE IV_ACTION.
+
+      WHEN LIF_SMS=>ACTION-SEND.
+
+        LV_PREFIX = `SEND`.
+
+      WHEN LIF_SMS=>ACTION-OTP.
+
+        LV_PREFIX = `OTP`.
+
+      WHEN LIF_SMS=>ACTION-TEMPLATE.
+
+        LV_PREFIX = `TPL`.
+
+      WHEN LIF_SMS=>ACTION-CANCEL.
+
+        LV_PREFIX = `CANCEL`.
+
+      WHEN LIF_SMS=>ACTION-REPORT.
+
+        LV_PREFIX = `REPORT`.
+
+      WHEN LIF_SMS=>ACTION-INBOX.
+
+        LV_PREFIX = `INBOX`.
+
+      WHEN LIF_SMS=>ACTION-LENGTH.
+
+        LV_PREFIX = `LENGTH`.
+
       WHEN OTHERS.
-        lv_prefix = `OTHER`.
+
+        LV_PREFIX = `OTHER`.
+
     ENDCASE.
-    CONCATENATE lv_prefix `_` lv_code INTO lv_key.
-    rv_text = lcl_text=>get( lv_key ).
-    IF rv_text <> lv_key.
+    CONCATENATE LV_PREFIX `_` LV_CODE INTO LV_KEY.
+    RV_TEXT = LCL_TEXT=>GET( LV_KEY ).
+    IF RV_TEXT NE LV_KEY.
+
       RETURN.
+
     ENDIF.
 
-    IF lv_code = `00`.
-      IF iv_action = lif_sms=>action-send
-         OR iv_action = lif_sms=>action-otp
-         OR iv_action = lif_sms=>action-template.
-        rv_text = lcl_text=>get( 'C00' ).
+    IF LV_CODE EQ `00`.
+
+      IF IV_ACTION EQ LIF_SMS=>ACTION-SEND
+         OR IV_ACTION EQ LIF_SMS=>ACTION-OTP
+         OR IV_ACTION EQ LIF_SMS=>ACTION-TEMPLATE.
+
+        RV_TEXT = LCL_TEXT=>GET( 'C00' ).
+
       ELSE.
-        rv_text = lcl_text=>get( 'C00_OK' ).
+
+        RV_TEXT = LCL_TEXT=>GET( 'C00_OK' ).
+
       ENDIF.
       RETURN.
+
     ENDIF.
 
     " C100 shows the original code (100 to 110) in its text
-    CONCATENATE `C` lv_code INTO lv_key.
-    rv_text = lcl_text=>get( iv_key = lv_key
-                             iv_1   = iv_code ).
-    IF rv_text <> lv_key.
+    CONCATENATE `C` LV_CODE INTO LV_KEY.
+    RV_TEXT = LCL_TEXT=>GET( IV_KEY = LV_KEY
+                             IV_1   = IV_CODE ).
+    IF RV_TEXT NE LV_KEY.
+
       RETURN.
+
     ENDIF.
 
-    lv_value = iv_description.
-    IF lv_value IS NOT INITIAL.
-      CONCATENATE `(` lv_value `)` INTO lv_value.
+    LV_VALUE = IV_DESCRIPTION.
+    IF LV_VALUE IS NOT INITIAL.
+
+      CONCATENATE `(` LV_VALUE `)` INTO LV_VALUE.
+
     ENDIF.
-    rv_text = lcl_text=>get( iv_key = 'C_OTHER'
-                             iv_1   = iv_code
-                             iv_2   = lv_value ).
+    RV_TEXT = LCL_TEXT=>GET( IV_KEY = 'C_OTHER'
+                             IV_1   = IV_CODE
+                             IV_2   = LV_VALUE ).
+
   ENDMETHOD.
 
+  METHOD FORMAT_TIME.
 
-  METHOD format_time.
-    CASE iv_style.
+    CASE IV_STYLE.
+
       WHEN 'DMYHM'.
-        CONCATENATE iv_date+6(2) iv_date+4(2) iv_date(4)
-                    iv_time(2) iv_time+2(2) INTO rv_text.
+
+        CONCATENATE IV_DATE+6(2) IV_DATE+4(2) IV_DATE(4)
+                    IV_TIME(2) IV_TIME+2(2)
+          INTO RV_TEXT.
+
       WHEN 'ISO_M'.
-        CONCATENATE iv_date(4) '-' iv_date+4(2) '-' iv_date+6(2) ` `
-                    iv_time(2) ':' iv_time+2(2) INTO rv_text.
+
+        CONCATENATE IV_DATE(4) '-' IV_DATE+4(2) '-' IV_DATE+6(2) ` `
+                    IV_TIME(2) ':' IV_TIME+2(2)
+          INTO RV_TEXT.
+
       WHEN 'DOT_S'.
-        CONCATENATE iv_date+6(2) '.' iv_date+4(2) '.' iv_date(4) ` `
-                    iv_time(2) ':' iv_time+2(2) ':' iv_time+4(2)
-                    INTO rv_text.
+
+        CONCATENATE IV_DATE+6(2) '.' IV_DATE+4(2) '.' IV_DATE(4) ` `
+                    IV_TIME(2) ':' IV_TIME+2(2) ':' IV_TIME+4(2)
+          INTO RV_TEXT.
+
       WHEN OTHERS.
-        CONCATENATE iv_date(4) '-' iv_date+4(2) '-' iv_date+6(2) ` `
-                    iv_time(2) ':' iv_time+2(2) ':' iv_time+4(2)
-                    INTO rv_text.
+
+        CONCATENATE IV_DATE(4) '-' IV_DATE+4(2) '-' IV_DATE+6(2) ` `
+                    IV_TIME(2) ':' IV_TIME+2(2) ':' IV_TIME+4(2)
+          INTO RV_TEXT.
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD TURKISH_TIME.
 
-  METHOD turkish_time.
-    DATA lv_millis TYPE string.
-    DATA lv_seconds TYPE p LENGTH 16 DECIMALS 0.
-    DATA lv_days TYPE i.
-    DATA lv_rest TYPE i.
-    DATA lv_date TYPE d.
-    DATA lv_time TYPE t.
+    DATA: LV_MILLIS  TYPE STRING,
+          LV_SECONDS TYPE P LENGTH 16 DECIMALS 0,
+          LV_DAYS    TYPE I,
+          LV_REST    TYPE I,
+          LV_DATE    TYPE D,
+          LV_TIME    TYPE T.
 
-    lv_millis = iv_millis.
-    CONDENSE lv_millis NO-GAPS.
-    IF lv_millis IS INITIAL OR NOT lv_millis CO '0123456789'
-       OR strlen( lv_millis ) > 15.
-      rv_text = lv_millis.
+    LV_MILLIS = IV_MILLIS.
+    CONDENSE LV_MILLIS NO-GAPS.
+    IF LV_MILLIS IS INITIAL OR NOT LV_MILLIS CO '0123456789'
+       OR STRLEN( LV_MILLIS ) GT 15.
+
+      RV_TEXT = LV_MILLIS.
       RETURN.
+
     ENDIF.
-    lv_seconds = lv_millis.
-    lv_seconds = lv_seconds DIV 1000
-                 + lif_sms=>turkey_offset_seconds.
-    lv_days = lv_seconds DIV 86400.
-    lv_rest = lv_seconds MOD 86400.
-    lv_date = '19700101'.
-    lv_date = lv_date + lv_days.
-    lv_time = lv_rest.
-    rv_text = format_time( iv_date  = lv_date
-                           iv_time  = lv_time
-                           iv_style = 'DOT_S' ).
+    LV_SECONDS = LV_MILLIS.
+    LV_SECONDS = LV_SECONDS DIV 1000
+                 + LIF_SMS=>TURKEY_OFFSET_SECONDS.
+    LV_DAYS = LV_SECONDS DIV 86400.
+    LV_REST = LV_SECONDS MOD 86400.
+    LV_DATE = '19700101'.
+    LV_DATE = LV_DATE + LV_DAYS.
+    LV_TIME = LV_REST.
+    RV_TEXT = FORMAT_TIME( IV_DATE  = LV_DATE
+                           IV_TIME  = LV_TIME
+                           IV_STYLE = 'DOT_S' ).
+
   ENDMETHOD.
 
+  METHOD URL_ENCODE.
 
-  METHOD url_encode.
-    DATA lo_out TYPE REF TO cl_abap_conv_out_ce.
-    DATA lv_text TYPE string.
-    DATA lv_bytes TYPE xstring.
-    DATA lv_byte TYPE x LENGTH 1.
-    DATA lv_len TYPE i.
-    DATA lv_pos TYPE i.
-    DATA lv_value TYPE i.
-    DATA lv_char TYPE c LENGTH 1.
-    DATA lv_hex TYPE c LENGTH 2.
+    DATA LO_OUT TYPE REF TO CL_ABAP_CONV_OUT_CE.
 
-    lv_text = iv_text.
-    IF lv_text IS INITIAL.
+    DATA: LV_TEXT  TYPE STRING,
+          LV_BYTES TYPE XSTRING,
+          LV_BYTE  TYPE X LENGTH 1,
+          LV_LEN   TYPE I,
+          LV_POS   TYPE I,
+          LV_VALUE TYPE I,
+          LV_CHAR  TYPE C LENGTH 1,
+          LV_HEX   TYPE C LENGTH 2.
+
+    LV_TEXT = IV_TEXT.
+    IF LV_TEXT IS INITIAL.
+
       RETURN.
+
     ENDIF.
-    lo_out = cl_abap_conv_out_ce=>create( encoding = 'UTF-8' ).
-    lo_out->convert( EXPORTING data   = lv_text
-                     IMPORTING buffer = lv_bytes ).
-    lv_len = xstrlen( lv_bytes ).
-    DO lv_len TIMES.
-      lv_pos = sy-index - 1.
-      lv_byte = lv_bytes+lv_pos(1).
-      lv_value = lv_byte.
+    LO_OUT = CL_ABAP_CONV_OUT_CE=>CREATE( ENCODING = 'UTF-8' ).
+    LO_OUT->CONVERT( EXPORTING DATA   = LV_TEXT
+                     IMPORTING BUFFER = LV_BYTES ).
+    LV_LEN = XSTRLEN( LV_BYTES ).
+    DO LV_LEN TIMES.
+
+      LV_POS = SY-INDEX - 1.
+      LV_BYTE = LV_BYTES+LV_POS(1).
+      LV_VALUE = LV_BYTE.
       " Letters, digits and - . _ ~ stay; the rest becomes %XX
-      IF ( lv_value >= 48 AND lv_value <= 57 )
-         OR ( lv_value >= 65 AND lv_value <= 90 )
-         OR ( lv_value >= 97 AND lv_value <= 122 )
-         OR lv_value = 45 OR lv_value = 46 OR lv_value = 95
-         OR lv_value = 126.
-        lv_char = cl_abap_conv_in_ce=>uccpi( lv_value ).
-        CONCATENATE rv_text lv_char INTO rv_text.
+      IF ( LV_VALUE GE 48 AND LV_VALUE LE 57 )
+         OR ( LV_VALUE GE 65 AND LV_VALUE LE 90 )
+         OR ( LV_VALUE GE 97 AND LV_VALUE LE 122 )
+         OR LV_VALUE EQ 45 OR LV_VALUE EQ 46 OR LV_VALUE EQ 95
+         OR LV_VALUE EQ 126.
+
+        LV_CHAR = CL_ABAP_CONV_IN_CE=>UCCPI( LV_VALUE ).
+        CONCATENATE RV_TEXT LV_CHAR INTO RV_TEXT.
+
       ELSE.
-        lv_hex = lv_byte.
-        CONCATENATE rv_text '%' lv_hex INTO rv_text.
+
+        LV_HEX = LV_BYTE.
+        CONCATENATE RV_TEXT '%' LV_HEX INTO RV_TEXT.
+
       ENDIF.
+
     ENDDO.
+
   ENDMETHOD.
 
+  METHOD CALL_NETGSM.
 
-  METHOD call_netgsm.
-    DATA ls_http TYPE lif_sms=>ty_http.
-    DATA lv_description TYPE string.
-    DATA lx_error TYPE REF TO lcx_sms.
-    DATA lv_status TYPE string.
+    DATA LX_ERROR TYPE REF TO LCX_SMS.
 
-    CLEAR: ev_code, ev_message, et_values, ev_status.
-    check_access( EXPORTING iv_destination = iv_destination
-                  IMPORTING ev_code        = ev_code
-                            ev_message     = ev_message ).
-    IF ev_code IS NOT INITIAL.
+    DATA LS_HTTP TYPE LIF_SMS=>TY_HTTP.
+
+    DATA: LV_DESCRIPTION TYPE STRING,
+          LV_STATUS      TYPE STRING.
+
+    CLEAR: EV_CODE, EV_MESSAGE, ET_VALUES, EV_STATUS.
+    CHECK_ACCESS( EXPORTING IV_DESTINATION = IV_DESTINATION
+                  IMPORTING EV_CODE        = EV_CODE
+                            EV_MESSAGE     = EV_MESSAGE ).
+    IF EV_CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
     TRY.
-        ls_http = mo_backend->call( iv_destination = iv_destination
-                                    iv_method      = iv_method
-                                    iv_path        = iv_path
-                                    iv_body        = iv_body ).
-        ev_status = ls_http-status.
-        read_answer( EXPORTING is_http        = ls_http
-                     IMPORTING ev_code        = ev_code
-                               ev_description = lv_description
-                               et_values      = et_values ).
-      CATCH lcx_sms INTO lx_error.
-        ev_code = lx_error->code.
-        ev_message = lx_error->text.
-        IF iv_action = lif_sms=>action-otp.
-          CASE ev_code.
-            WHEN lif_sms=>code-http.
+
+        LS_HTTP = MO_BACKEND->CALL( IV_DESTINATION = IV_DESTINATION
+                                    IV_METHOD      = IV_METHOD
+                                    IV_PATH        = IV_PATH
+                                    IV_BODY        = IV_BODY ).
+        EV_STATUS = LS_HTTP-STATUS.
+        READ_ANSWER( EXPORTING IS_HTTP        = LS_HTTP
+                     IMPORTING EV_CODE        = EV_CODE
+                               EV_DESCRIPTION = LV_DESCRIPTION
+                               ET_VALUES      = ET_VALUES ).
+
+      CATCH LCX_SMS INTO LX_ERROR.
+
+        EV_CODE = LX_ERROR->CODE.
+        EV_MESSAGE = LX_ERROR->TEXT.
+        IF IV_ACTION EQ LIF_SMS=>ACTION-OTP.
+
+          CASE EV_CODE.
+
+            WHEN LIF_SMS=>CODE-HTTP.
+
               " 7.00: no method call as an actual parameter
-              lv_status = int_text( ev_status ).
-              ev_message = lcl_text=>get( iv_key = 'HTTP'
-                                          iv_1   = lv_status ).
-            WHEN lif_sms=>code-no_conn.
-              ev_message = lcl_text=>get( 'OTP_CONN' ).
-            WHEN lif_sms=>code-no_trust OR lif_sms=>code-no_dest
-              OR lif_sms=>code-no_auth.
-              ev_message = lcl_text=>get( iv_key = ev_code
-                                          iv_1 = iv_destination ).
+              LV_STATUS = INT_TEXT( EV_STATUS ).
+              EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'HTTP'
+                                          IV_1   = LV_STATUS ).
+
+            WHEN LIF_SMS=>CODE-NO_CONN.
+
+              EV_MESSAGE = LCL_TEXT=>GET( 'OTP_CONN' ).
+
+            WHEN LIF_SMS=>CODE-NO_TRUST OR LIF_SMS=>CODE-NO_DEST
+              OR LIF_SMS=>CODE-NO_AUTH.
+
+              EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = EV_CODE
+                                          IV_1 = IV_DESTINATION ).
+
             WHEN OTHERS.
-              ev_message = lcl_text=>get( 'OTP_REPLY' ).
+
+              EV_MESSAGE = LCL_TEXT=>GET( 'OTP_REPLY' ).
+
           ENDCASE.
+
         ENDIF.
         RETURN.
+
     ENDTRY.
-    IF iv_action = lif_sms=>action-otp.
-      CLEAR lv_description.
-      IF ev_code CN '0123456789' OR strlen( ev_code ) > 3.
-        ev_code = lif_sms=>code-bad_reply.
-        ev_message = lcl_text=>get( 'OTP_REPLY' ).
-        CLEAR et_values.
+    IF IV_ACTION EQ LIF_SMS=>ACTION-OTP.
+
+      CLEAR LV_DESCRIPTION.
+      IF EV_CODE CN '0123456789' OR STRLEN( EV_CODE ) GT 3.
+
+        EV_CODE = LIF_SMS=>CODE-BAD_REPLY.
+        EV_MESSAGE = LCL_TEXT=>GET( 'OTP_REPLY' ).
+        CLEAR ET_VALUES.
         RETURN.
+
       ENDIF.
+
     ENDIF.
-    ev_message = code_text( iv_action      = iv_action
-                            iv_code        = ev_code
-                            iv_description = lv_description ).
+    EV_MESSAGE = CODE_TEXT( IV_ACTION      = IV_ACTION
+                            IV_CODE        = EV_CODE
+                            IV_DESCRIPTION = LV_DESCRIPTION ).
+
   ENDMETHOD.
 
+  METHOD CHECK_ACCESS.
 
-  METHOD check_access.
-    DATA lv_type TYPE rfcdes-rfctype.
+    DATA LV_TYPE TYPE RFCDES-RFCTYPE.
 
-    CLEAR: ev_code, ev_message.
-    lv_type = mo_backend->destination_type( iv_destination ).
-    IF lv_type IS INITIAL.
-      ev_code = lif_sms=>code-no_dest.
-      ev_message = lcl_text=>get( iv_key = 'NO_DEST'
-                                  iv_1   = iv_destination ).
-    ELSEIF lv_type <> 'G'.
-      ev_code = lif_sms=>code-no_dest.
-      ev_message = lcl_text=>get( iv_key = 'DEST_TYPE'
-                                  iv_1   = iv_destination
-                                  iv_2   = lv_type ).
-    ELSEIF mo_backend->has_authority( iv_destination ) = abap_false.
-      ev_code = lif_sms=>code-no_auth.
-      ev_message = lcl_text=>get( iv_key = 'NO_AUTH'
-                                  iv_1   = iv_destination ).
+    CLEAR: EV_CODE, EV_MESSAGE.
+    LV_TYPE = MO_BACKEND->DESTINATION_TYPE( IV_DESTINATION ).
+    IF LV_TYPE IS INITIAL.
+
+      EV_CODE = LIF_SMS=>CODE-NO_DEST.
+      EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'NO_DEST'
+                                  IV_1   = IV_DESTINATION ).
+
+    ELSEIF LV_TYPE NE 'G'.
+
+      EV_CODE = LIF_SMS=>CODE-NO_DEST.
+      EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'DEST_TYPE'
+                                  IV_1   = IV_DESTINATION
+                                  IV_2   = LV_TYPE ).
+
+    ELSEIF MO_BACKEND->HAS_AUTHORITY( IV_DESTINATION ) EQ ABAP_FALSE.
+
+      EV_CODE = LIF_SMS=>CODE-NO_AUTH.
+      EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'NO_AUTH'
+                                  IV_1   = IV_DESTINATION ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD READ_ANSWER.
 
-  METHOD read_answer.
-    DATA lv_body TYPE string.
-    DATA lv_status TYPE c LENGTH 11.
-    DATA lv_text TYPE string.
+    DATA: LV_BODY   TYPE STRING,
+          LV_STATUS TYPE C LENGTH 11,
+          LV_TEXT   TYPE STRING.
 
-    CLEAR: ev_code, ev_description, et_values.
-    lv_body = is_http-body.
-    CONDENSE lv_body.
+    CLEAR: EV_CODE, EV_DESCRIPTION, ET_VALUES.
+    LV_BODY = IS_HTTP-BODY.
+    CONDENSE LV_BODY.
 
-    IF lv_body IS NOT INITIAL AND lv_body(1) = `{`.
-      et_values = lcl_sms_json=>parse( lv_body ).
-      ev_code = lcl_sms_json=>value_of( it_values = et_values
-                                        iv_path   = `code` ).
-      ev_description = lcl_sms_json=>value_of(
-                         it_values = et_values
-                         iv_path   = `description` ).
+    IF LV_BODY IS NOT INITIAL AND LV_BODY(1) EQ `{`.
+
+      ET_VALUES = LCL_SMS_JSON=>PARSE( LV_BODY ).
+      EV_CODE = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = ET_VALUES
+                                        IV_PATH   = `code` ).
+      EV_DESCRIPTION = LCL_SMS_JSON=>VALUE_OF(
+                         IT_VALUES = ET_VALUES
+                         IV_PATH   = `description` ).
       " Statistics and length answer without a code when all is well
-      IF ev_code IS INITIAL
-         AND ( ev_description = `success`
-               OR lcl_sms_json=>has( it_values = et_values
-                                     iv_path   = `parts` )
-                  = abap_true ).
-        ev_code = lif_sms=>code-ok.
+      IF EV_CODE IS INITIAL
+         AND ( EV_DESCRIPTION EQ `success`
+               OR LCL_SMS_JSON=>HAS( IT_VALUES = ET_VALUES
+                                     IV_PATH   = `parts` )
+                  EQ ABAP_TRUE ).
+
+        EV_CODE = LIF_SMS=>CODE-OK.
+
       ENDIF.
-    ELSEIF lv_body CO '0123456789 '.
+
+    ELSEIF LV_BODY CO '0123456789 '.
+
       " Older answers are plain text: the code, maybe a job ID
-      SPLIT lv_body AT ` ` INTO ev_code ev_description.
+      SPLIT LV_BODY AT ` ` INTO EV_CODE EV_DESCRIPTION.
+
     ENDIF.
 
     " Netgsm also answers with HTTP 406 and a normal code in the
     " body (seen live: 406 with code 00 and 406 with code 30), so
     " the code in the body wins over the HTTP status
-    IF ev_code IS INITIAL AND is_http-status <> 200.
-      lv_status = is_http-status.
-      CONDENSE lv_status.
-      lv_text = lcl_text=>get( iv_key = 'HTTP'
-                               iv_1   = lv_status
-                               iv_2   = is_http-reason ).
-      IF lv_body IS NOT INITIAL.
-        CONCATENATE lv_text ` ` lv_body INTO lv_text.
+    IF EV_CODE IS INITIAL AND IS_HTTP-STATUS NE 200.
+
+      LV_STATUS = IS_HTTP-STATUS.
+      CONDENSE LV_STATUS.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'HTTP'
+                               IV_1   = LV_STATUS
+                               IV_2   = IS_HTTP-REASON ).
+      IF LV_BODY IS NOT INITIAL.
+
+        CONCATENATE LV_TEXT ` ` LV_BODY INTO LV_TEXT.
+
       ENDIF.
-      RAISE EXCEPTION TYPE lcx_sms
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = lif_sms=>code-http
-          text = lv_text.
+          CODE = LIF_SMS=>CODE-HTTP
+          TEXT = LV_TEXT.
+
     ENDIF.
 
-    IF ev_code IS INITIAL.
-      lv_text = lcl_text=>get( iv_key = 'BAD_REPLY'
-                               iv_1   = lv_body ).
-      RAISE EXCEPTION TYPE lcx_sms
+    IF EV_CODE IS INITIAL.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'BAD_REPLY'
+                               IV_1   = LV_BODY ).
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = lif_sms=>code-bad_reply
-          text = lv_text.
+          CODE = LIF_SMS=>CODE-BAD_REPLY
+          TEXT = LV_TEXT.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD CHECK_NUMBERS.
 
-  METHOD check_numbers.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA lv_max TYPE string.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    cs_result-recipients = lcl_sms_phone=>normalize_all( it_numbers ).
-    cs_result-valid = 0.
-    LOOP AT cs_result-recipients INTO ls_recipient
-         WHERE ok = abap_true.
-      cs_result-valid = cs_result-valid + 1.
+    DATA LV_MAX TYPE STRING.
+
+    CS_RESULT-RECIPIENTS = LCL_SMS_PHONE=>NORMALIZE_ALL( IT_NUMBERS ).
+    CS_RESULT-VALID = 0.
+    LOOP AT CS_RESULT-RECIPIENTS INTO LS_RECIPIENT
+         WHERE OK EQ ABAP_TRUE.
+
+      CS_RESULT-VALID = CS_RESULT-VALID + 1.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
-    IF cs_result-valid = 0.
-      cs_result-code = lif_sms=>code-bad_number.
-      cs_result-message = lcl_text=>get( 'NO_NUMBERS' ).
-    ELSEIF cs_result-valid > iv_max.
-      cs_result-code = lif_sms=>code-bad_number.
-      IF iv_max = 1.
-        cs_result-message = lcl_text=>get( 'OTP_ONE' ).
+
+    CLEAR LS_RECIPIENT.
+    IF CS_RESULT-VALID EQ 0.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_NUMBER.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'NO_NUMBERS' ).
+
+    ELSEIF CS_RESULT-VALID GT IV_MAX.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_NUMBER.
+      IF IV_MAX EQ 1.
+
+        CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'OTP_ONE' ).
+
       ELSE.
-        lv_max = int_text( iv_max ).
-        cs_result-message = lcl_text=>get( iv_key = 'TOO_MANY'
-                                           iv_1   = lv_max ).
+
+        LV_MAX = INT_TEXT( IV_MAX ).
+        CS_RESULT-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'TOO_MANY'
+                                           IV_1   = LV_MAX ).
+
       ENDIF.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD CHECK_HEADER.
 
-  METHOD check_header.
-    DATA lv_len TYPE i.
+    DATA LV_LEN TYPE I.
 
-    lv_len = strlen( cs_result-header ).
-    IF lv_len = 0.
-      cs_result-code = lif_sms=>code-bad_input.
-      cs_result-message = lcl_text=>get( 'NO_HEADER' ).
-    ELSEIF lv_len < 3 OR lv_len > 11.
-      cs_result-code = lif_sms=>code-bad_input.
-      cs_result-message = lcl_text=>get( 'HEADER_LEN' ).
+    LV_LEN = STRLEN( CS_RESULT-HEADER ).
+    IF LV_LEN EQ 0.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'NO_HEADER' ).
+
+    ELSEIF LV_LEN LT 3 OR LV_LEN GT 11.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'HEADER_LEN' ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD CHECK_IYS.
 
-  METHOD check_iys.
-    IF cs_result-iys <> lif_sms=>iys-info
-       AND cs_result-iys <> lif_sms=>iys-individual
-       AND cs_result-iys <> lif_sms=>iys-merchant.
-      cs_result-code = lif_sms=>code-bad_input.
-      cs_result-message = lcl_text=>get( iv_key = 'BAD_IYS'
-                                         iv_1   = cs_result-iys ).
+    IF CS_RESULT-IYS NE LIF_SMS=>IYS-INFO
+       AND CS_RESULT-IYS NE LIF_SMS=>IYS-INDIVIDUAL
+       AND CS_RESULT-IYS NE LIF_SMS=>IYS-MERCHANT.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( IV_KEY = 'BAD_IYS'
+                                         IV_1   = CS_RESULT-IYS ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD CHECK_SCHEDULE.
 
-  METHOD check_schedule.
-    DATA lv_start TYPE c LENGTH 14.
-    DATA lv_stop TYPE c LENGTH 14.
+    DATA: LV_START TYPE C LENGTH 14,
+          LV_STOP  TYPE C LENGTH 14.
 
-    IF cs_result-schedule-start_date IS INITIAL
-       OR cs_result-schedule-start_date = '00000000'.
-      IF cs_result-schedule-stop_date IS NOT INITIAL
-         AND cs_result-schedule-stop_date <> '00000000'.
-        cs_result-code = lif_sms=>code-bad_input.
-        cs_result-message = lcl_text=>get( 'SCHED_NO_START' ).
+    IF CS_RESULT-SCHEDULE-START_DATE IS INITIAL
+       OR CS_RESULT-SCHEDULE-START_DATE EQ '00000000'.
+
+      IF CS_RESULT-SCHEDULE-STOP_DATE IS NOT INITIAL
+         AND CS_RESULT-SCHEDULE-STOP_DATE NE '00000000'.
+
+        CS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+        CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'SCHED_NO_START' ).
+
       ENDIF.
-      CLEAR cs_result-schedule.
+      CLEAR CS_RESULT-SCHEDULE.
       RETURN.
+
     ENDIF.
-    IF cs_result-schedule-stop_date IS INITIAL
-       OR cs_result-schedule-stop_date = '00000000'.
-      CLEAR: cs_result-schedule-stop_date,
-             cs_result-schedule-stop_time.
+    IF CS_RESULT-SCHEDULE-STOP_DATE IS INITIAL
+       OR CS_RESULT-SCHEDULE-STOP_DATE EQ '00000000'.
+
+      CLEAR: CS_RESULT-SCHEDULE-STOP_DATE,
+             CS_RESULT-SCHEDULE-STOP_TIME.
       RETURN.
+
     ENDIF.
-    CONCATENATE cs_result-schedule-start_date
-                cs_result-schedule-start_time INTO lv_start.
-    CONCATENATE cs_result-schedule-stop_date
-                cs_result-schedule-stop_time INTO lv_stop.
-    IF lv_stop <= lv_start.
-      cs_result-code = lif_sms=>code-bad_input.
-      cs_result-message = lcl_text=>get( 'SCHED_STOP' ).
+    CONCATENATE CS_RESULT-SCHEDULE-START_DATE
+                CS_RESULT-SCHEDULE-START_TIME
+      INTO LV_START.
+    CONCATENATE CS_RESULT-SCHEDULE-STOP_DATE
+                CS_RESULT-SCHEDULE-STOP_TIME
+      INTO LV_STOP.
+    IF LV_STOP LE LV_START.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-BAD_INPUT.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'SCHED_STOP' ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD CHECK_RANGE.
 
-  METHOD check_range.
-    DATA lv_days TYPE i.
-    DATA lv_max TYPE string.
+    DATA: LV_DAYS TYPE I,
+          LV_MAX  TYPE STRING.
 
-    CLEAR: ev_code, ev_message.
-    IF iv_from IS INITIAL AND iv_to IS INITIAL.
+    CLEAR: EV_CODE, EV_MESSAGE.
+    IF IV_FROM IS INITIAL AND IV_TO IS INITIAL.
+
       RETURN.
+
     ENDIF.
-    IF iv_from IS INITIAL OR iv_to IS INITIAL.
-      ev_code = lif_sms=>code-bad_input.
-      ev_message = lcl_text=>get( 'RANGE_BOTH' ).
-    ELSEIF iv_to < iv_from.
-      ev_code = lif_sms=>code-bad_input.
-      ev_message = lcl_text=>get( 'RANGE_ORDER' ).
+    IF IV_FROM IS INITIAL OR IV_TO IS INITIAL.
+
+      EV_CODE = LIF_SMS=>CODE-BAD_INPUT.
+      EV_MESSAGE = LCL_TEXT=>GET( 'RANGE_BOTH' ).
+
+    ELSEIF IV_TO LT IV_FROM.
+
+      EV_CODE = LIF_SMS=>CODE-BAD_INPUT.
+      EV_MESSAGE = LCL_TEXT=>GET( 'RANGE_ORDER' ).
+
     ELSE.
-      lv_days = iv_to - iv_from.
-      IF lv_days > iv_days.
-        lv_max = int_text( iv_days ).
-        ev_code = lif_sms=>code-bad_input.
-        ev_message = lcl_text=>get( iv_key = 'RANGE_LONG'
-                                    iv_1   = lv_max ).
+
+      LV_DAYS = IV_TO - IV_FROM.
+      IF LV_DAYS GT IV_DAYS.
+
+        LV_MAX = INT_TEXT( IV_DAYS ).
+        EV_CODE = LIF_SMS=>CODE-BAD_INPUT.
+        EV_MESSAGE = LCL_TEXT=>GET( IV_KEY = 'RANGE_LONG'
+                                    IV_1   = LV_MAX ).
+
       ENDIF.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD FINISH_SEND.
 
-  METHOD finish_send.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA lv_unsure TYPE string.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
+
+    DATA LV_UNSURE TYPE STRING.
 
     " Destination and authorization, also for the preview
-    check_access( EXPORTING iv_destination = iv_destination
-                  IMPORTING ev_code        = cs_result-code
-                            ev_message     = cs_result-message ).
-    IF cs_result-code IS NOT INITIAL.
+    CHECK_ACCESS( EXPORTING IV_DESTINATION = IV_DESTINATION
+                  IMPORTING EV_CODE        = CS_RESULT-CODE
+                            EV_MESSAGE     = CS_RESULT-MESSAGE ).
+    IF CS_RESULT-CODE IS NOT INITIAL.
+
       RETURN.
+
     ENDIF.
-    IF iv_dry_run = abap_true.
-      cs_result-code = lif_sms=>code-dry_run.
-      cs_result-message = lcl_text=>get( 'DRY_RUN' ).
+    IF IV_DRY_RUN EQ ABAP_TRUE.
+
+      CS_RESULT-CODE = LIF_SMS=>CODE-DRY_RUN.
+      CS_RESULT-MESSAGE = LCL_TEXT=>GET( 'DRY_RUN' ).
       RETURN.
+
     ENDIF.
 
     " From here on, any answer means Netgsm may have it
-    call_netgsm( EXPORTING iv_action      = cs_result-action
-                           iv_destination = iv_destination
-                           iv_method      = `POST`
-                           iv_path        = iv_path
-                           iv_body        = iv_body
-                 IMPORTING ev_code        = cs_result-code
-                           ev_message     = cs_result-message
-                           et_values      = lt_values
-                           ev_status      = cs_result-http_status ).
-    IF cs_result-code = lif_sms=>code-no_conn.
-      lv_unsure = lcl_text=>get( 'UNSURE' ).
-      CONCATENATE cs_result-message lv_unsure
-                  INTO cs_result-message SEPARATED BY ` `.
+    CALL_NETGSM( EXPORTING IV_ACTION      = CS_RESULT-ACTION
+                           IV_DESTINATION = IV_DESTINATION
+                           IV_METHOD      = `POST`
+                           IV_PATH        = IV_PATH
+                           IV_BODY        = IV_BODY
+                 IMPORTING EV_CODE        = CS_RESULT-CODE
+                           EV_MESSAGE     = CS_RESULT-MESSAGE
+                           ET_VALUES      = LT_VALUES
+                           EV_STATUS      = CS_RESULT-HTTP_STATUS ).
+    IF CS_RESULT-CODE EQ LIF_SMS=>CODE-NO_CONN.
+
+      LV_UNSURE = LCL_TEXT=>GET( 'UNSURE' ).
+      CONCATENATE CS_RESULT-MESSAGE LV_UNSURE
+        INTO CS_RESULT-MESSAGE
+        SEPARATED BY ` `.
       RETURN.
+
     ENDIF.
-    IF cs_result-action <> lif_sms=>action-otp.
-      cs_result-description = lcl_sms_json=>value_of(
-                              it_values = lt_values
-                              iv_path   = `description` ).
+    IF CS_RESULT-ACTION NE LIF_SMS=>ACTION-OTP.
+
+      CS_RESULT-DESCRIPTION = LCL_SMS_JSON=>VALUE_OF(
+                              IT_VALUES = LT_VALUES
+                              IV_PATH   = `description` ).
+
     ENDIF.
-    IF cs_result-code = `00` OR cs_result-code = `01`
-       OR cs_result-code = `02`.
-      cs_result-sent = abap_true.
+    IF CS_RESULT-CODE EQ `00` OR CS_RESULT-CODE EQ `01`
+       OR CS_RESULT-CODE EQ `02`.
+
+      CS_RESULT-SENT = ABAP_TRUE.
+
     ENDIF.
-    IF cs_result-action <> lif_sms=>action-otp OR
-       cs_result-sent = abap_true.
-      cs_result-jobid = lcl_sms_json=>value_of( it_values = lt_values
-                                               iv_path = `jobid` ).
+    IF CS_RESULT-ACTION NE LIF_SMS=>ACTION-OTP OR
+       CS_RESULT-SENT EQ ABAP_TRUE.
+
+      CS_RESULT-JOBID = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = LT_VALUES
+                                               IV_PATH = `jobid` ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SEND_BODY.
 
-  METHOD send_body.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA lv_text TYPE string.
-    DATA lv_number TYPE string.
-    DATA lv_header TYPE string.
-    DATA lv_extra TYPE string.
-    DATA lv_first TYPE abap_bool VALUE abap_true.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    lv_text = lcl_sms_json=>escape( is_result-text_info-text ).
-    lv_header = lcl_sms_json=>escape( is_result-header ).
-    CONCATENATE `{"msgheader":"` lv_header `"` INTO rv_json.
-    CASE is_result-text_info-encoding.
-      WHEN lif_sms=>encoding-turkish.
-        CONCATENATE rv_json `,"encoding":"TR"` INTO rv_json.
-      WHEN lif_sms=>encoding-unicode.
-        CONCATENATE rv_json `,"encoding":"UNICODE"` INTO rv_json.
+    DATA: LV_TEXT   TYPE STRING,
+          LV_NUMBER TYPE STRING,
+          LV_HEADER TYPE STRING,
+          LV_EXTRA  TYPE STRING,
+          LV_FIRST  TYPE ABAP_BOOL VALUE ABAP_TRUE.
+
+    LV_TEXT = LCL_SMS_JSON=>ESCAPE( IS_RESULT-TEXT_INFO-TEXT ).
+    LV_HEADER = LCL_SMS_JSON=>ESCAPE( IS_RESULT-HEADER ).
+    CONCATENATE `{"msgheader":"` LV_HEADER `"` INTO RV_JSON.
+    CASE IS_RESULT-TEXT_INFO-ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-TURKISH.
+
+        CONCATENATE RV_JSON `,"encoding":"TR"` INTO RV_JSON.
+
+      WHEN LIF_SMS=>ENCODING-UNICODE.
+
+        CONCATENATE RV_JSON `,"encoding":"UNICODE"` INTO RV_JSON.
+
     ENDCASE.
-    CONCATENATE rv_json `,"iysfilter":"` is_result-iys `"`
-                INTO rv_json.
-    lv_extra = schedule_json( is_schedule = is_result-schedule
-                              iv_style    = 'DMYHM' ).
-    CONCATENATE rv_json lv_extra INTO rv_json.
-    lv_extra = reference_json( is_result-reference ).
-    CONCATENATE rv_json lv_extra `,"messages":[` INTO rv_json.
-    LOOP AT is_result-recipients INTO ls_recipient
-         WHERE ok = abap_true.
-      IF iv_masked = abap_true.
-        lv_number = ls_recipient-masked.
+    CONCATENATE RV_JSON `,"iysfilter":"` IS_RESULT-IYS `"`
+      INTO RV_JSON.
+    LV_EXTRA = SCHEDULE_JSON( IS_SCHEDULE = IS_RESULT-SCHEDULE
+                              IV_STYLE    = 'DMYHM' ).
+    CONCATENATE RV_JSON LV_EXTRA INTO RV_JSON.
+    LV_EXTRA = REFERENCE_JSON( IS_RESULT-REFERENCE ).
+    CONCATENATE RV_JSON LV_EXTRA `,"messages":[` INTO RV_JSON.
+    LOOP AT IS_RESULT-RECIPIENTS INTO LS_RECIPIENT
+         WHERE OK EQ ABAP_TRUE.
+
+      IF IV_MASKED EQ ABAP_TRUE.
+
+        LV_NUMBER = LS_RECIPIENT-MASKED.
+
       ELSE.
-        lv_number = ls_recipient-number.
+
+        LV_NUMBER = LS_RECIPIENT-NUMBER.
+
       ENDIF.
-      IF lv_first = abap_false.
-        CONCATENATE rv_json `,` INTO rv_json.
+      IF LV_FIRST EQ ABAP_FALSE.
+
+        CONCATENATE RV_JSON `,` INTO RV_JSON.
+
       ENDIF.
-      lv_first = abap_false.
-      CONCATENATE rv_json `{"msg":"` lv_text `","no":"` lv_number `"}`
-                  INTO rv_json.
+      LV_FIRST = ABAP_FALSE.
+      CONCATENATE RV_JSON `{"msg":"` LV_TEXT `","no":"` LV_NUMBER `"}`
+        INTO RV_JSON.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
-    CONCATENATE rv_json `]}` INTO rv_json.
+
+    CLEAR LS_RECIPIENT.
+    CONCATENATE RV_JSON `]}` INTO RV_JSON.
+
   ENDMETHOD.
 
+  METHOD OTP_BODY.
 
-  METHOD otp_body.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA lv_text TYPE string.
-    DATA lv_number TYPE string.
-    DATA lv_header TYPE string.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    READ TABLE is_result-recipients INTO ls_recipient
-         WITH KEY ok = abap_true.
-    lv_number = ls_recipient-number.
-    lv_text = lcl_sms_json=>escape( is_result-text_info-text ).
-    lv_header = lcl_sms_json=>escape( is_result-header ).
-    CONCATENATE `{"msgheader":"` lv_header `","msg":"` lv_text
-                `","no":"` lv_number `"}` INTO rv_json.
+    DATA: LV_TEXT   TYPE STRING,
+          LV_NUMBER TYPE STRING,
+          LV_HEADER TYPE STRING.
+
+    CLEAR LS_RECIPIENT.
+    READ TABLE IS_RESULT-RECIPIENTS
+         INTO LS_RECIPIENT
+         WITH KEY OK = ABAP_TRUE.
+    LV_NUMBER = LS_RECIPIENT-NUMBER.
+    LV_TEXT = LCL_SMS_JSON=>ESCAPE( IS_RESULT-TEXT_INFO-TEXT ).
+    LV_HEADER = LCL_SMS_JSON=>ESCAPE( IS_RESULT-HEADER ).
+    CONCATENATE `{"msgheader":"` LV_HEADER `","msg":"` LV_TEXT
+                `","no":"` LV_NUMBER `"}`
+      INTO RV_JSON.
+
   ENDMETHOD.
 
+  METHOD TEMPLATE_BODY.
 
-  METHOD template_body.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA ls_param TYPE lif_sms=>ty_param.
-    DATA lv_params TYPE string.
-    DATA lv_name TYPE string.
-    DATA lv_value TYPE string.
-    DATA lv_number TYPE string.
-    DATA lv_header TYPE string.
-    DATA lv_extra TYPE string.
-    DATA lv_id TYPE string.
-    DATA lv_first TYPE abap_bool VALUE abap_true.
+    DATA: LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT,
+          LS_PARAM     TYPE LIF_SMS=>TY_PARAM.
+
+    DATA: LV_PARAMS TYPE STRING,
+          LV_NAME   TYPE STRING,
+          LV_VALUE  TYPE STRING,
+          LV_NUMBER TYPE STRING,
+          LV_HEADER TYPE STRING,
+          LV_EXTRA  TYPE STRING,
+          LV_ID     TYPE STRING,
+          LV_FIRST  TYPE ABAP_BOOL VALUE ABAP_TRUE.
 
     " The same values for every number
-    LOOP AT it_params INTO ls_param.
-      lv_name = lcl_sms_json=>escape( ls_param-name ).
-      lv_value = ls_param-value.
-      IF iv_ascii = abap_true.
-        lv_value = lcl_sms_text=>to_ascii( lv_value ).
+    LOOP AT IT_PARAMS INTO LS_PARAM.
+
+      LV_NAME = LCL_SMS_JSON=>ESCAPE( LS_PARAM-NAME ).
+      LV_VALUE = LS_PARAM-VALUE.
+      IF IV_ASCII EQ ABAP_TRUE.
+
+        LV_VALUE = LCL_SMS_TEXT=>TO_ASCII( LV_VALUE ).
+
       ENDIF.
-      lv_value = lcl_sms_json=>escape( lv_value ).
-      IF lv_params IS NOT INITIAL.
-        CONCATENATE lv_params `,` INTO lv_params.
+      LV_VALUE = LCL_SMS_JSON=>ESCAPE( LV_VALUE ).
+      IF LV_PARAMS IS NOT INITIAL.
+
+        CONCATENATE LV_PARAMS `,` INTO LV_PARAMS.
+
       ENDIF.
-      CONCATENATE lv_params `"` lv_name `":"` lv_value `"`
-                  INTO lv_params.
+      CONCATENATE LV_PARAMS `"` LV_NAME `":"` LV_VALUE `"`
+        INTO LV_PARAMS.
+
+      CLEAR LS_PARAM.
+
     ENDLOOP.
 
-    lv_header = lcl_sms_json=>escape( is_result-header ).
-    CONCATENATE `{"msgheader":"` lv_header `"` INTO rv_json.
-    CASE is_result-text_info-encoding.
-      WHEN lif_sms=>encoding-turkish.
-        CONCATENATE rv_json `,"encoding":"TR"` INTO rv_json.
-      WHEN lif_sms=>encoding-unicode.
-        CONCATENATE rv_json `,"encoding":"UNICODE"` INTO rv_json.
+    CLEAR LS_PARAM.
+
+    LV_HEADER = LCL_SMS_JSON=>ESCAPE( IS_RESULT-HEADER ).
+    CONCATENATE `{"msgheader":"` LV_HEADER `"` INTO RV_JSON.
+    CASE IS_RESULT-TEXT_INFO-ENCODING.
+
+      WHEN LIF_SMS=>ENCODING-TURKISH.
+
+        CONCATENATE RV_JSON `,"encoding":"TR"` INTO RV_JSON.
+
+      WHEN LIF_SMS=>ENCODING-UNICODE.
+
+        CONCATENATE RV_JSON `,"encoding":"UNICODE"` INTO RV_JSON.
+
     ENDCASE.
-    CONCATENATE rv_json `,"iysfilter":"` is_result-iys `"`
-                INTO rv_json.
-    lv_extra = schedule_json( is_schedule = is_result-schedule
-                              iv_style    = 'ISO_M' ).
-    CONCATENATE rv_json lv_extra INTO rv_json.
-    lv_extra = reference_json( is_result-reference ).
-    CONCATENATE rv_json lv_extra `,"templates":[` INTO rv_json.
-    lv_id = int_text( is_result-template_id ).
-    LOOP AT is_result-recipients INTO ls_recipient
-         WHERE ok = abap_true.
-      IF iv_masked = abap_true.
-        lv_number = ls_recipient-masked.
+    CONCATENATE RV_JSON `,"iysfilter":"` IS_RESULT-IYS `"`
+      INTO RV_JSON.
+    LV_EXTRA = SCHEDULE_JSON( IS_SCHEDULE = IS_RESULT-SCHEDULE
+                              IV_STYLE    = 'ISO_M' ).
+    CONCATENATE RV_JSON LV_EXTRA INTO RV_JSON.
+    LV_EXTRA = REFERENCE_JSON( IS_RESULT-REFERENCE ).
+    CONCATENATE RV_JSON LV_EXTRA `,"templates":[` INTO RV_JSON.
+    LV_ID = INT_TEXT( IS_RESULT-TEMPLATE_ID ).
+    LOOP AT IS_RESULT-RECIPIENTS INTO LS_RECIPIENT
+         WHERE OK EQ ABAP_TRUE.
+
+      IF IV_MASKED EQ ABAP_TRUE.
+
+        LV_NUMBER = LS_RECIPIENT-MASKED.
+
       ELSE.
-        lv_number = ls_recipient-number.
+
+        LV_NUMBER = LS_RECIPIENT-NUMBER.
+
       ENDIF.
-      IF lv_first = abap_false.
-        CONCATENATE rv_json `,` INTO rv_json.
+      IF LV_FIRST EQ ABAP_FALSE.
+
+        CONCATENATE RV_JSON `,` INTO RV_JSON.
+
       ENDIF.
-      lv_first = abap_false.
-      CONCATENATE rv_json `{"templateId":` lv_id `,"number":"`
-                  lv_number `","params":{` lv_params `}}`
-                  INTO rv_json.
+      LV_FIRST = ABAP_FALSE.
+      CONCATENATE RV_JSON `{"templateId":` LV_ID `,"number":"`
+                  LV_NUMBER `","params":{` LV_PARAMS `}}`
+        INTO RV_JSON.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
-    CONCATENATE rv_json `]}` INTO rv_json.
+
+    CLEAR LS_RECIPIENT.
+    CONCATENATE RV_JSON `]}` INTO RV_JSON.
+
   ENDMETHOD.
 
+  METHOD SCHEDULE_JSON.
 
-  METHOD schedule_json.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
-    IF is_schedule-start_date IS INITIAL.
+    IF IS_SCHEDULE-START_DATE IS INITIAL.
+
       RETURN.
+
     ENDIF.
-    lv_text = format_time( iv_date  = is_schedule-start_date
-                           iv_time  = is_schedule-start_time
-                           iv_style = iv_style ).
-    CONCATENATE `,"startdate":"` lv_text `"` INTO rv_json.
-    IF is_schedule-stop_date IS NOT INITIAL.
-      lv_text = format_time( iv_date  = is_schedule-stop_date
-                             iv_time  = is_schedule-stop_time
-                             iv_style = iv_style ).
-      CONCATENATE rv_json `,"stopdate":"` lv_text `"` INTO rv_json.
+    LV_TEXT = FORMAT_TIME( IV_DATE  = IS_SCHEDULE-START_DATE
+                           IV_TIME  = IS_SCHEDULE-START_TIME
+                           IV_STYLE = IV_STYLE ).
+    CONCATENATE `,"startdate":"` LV_TEXT `"` INTO RV_JSON.
+    IF IS_SCHEDULE-STOP_DATE IS NOT INITIAL.
+
+      LV_TEXT = FORMAT_TIME( IV_DATE  = IS_SCHEDULE-STOP_DATE
+                             IV_TIME  = IS_SCHEDULE-STOP_TIME
+                             IV_STYLE = IV_STYLE ).
+      CONCATENATE RV_JSON `,"stopdate":"` LV_TEXT `"` INTO RV_JSON.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD REFERENCE_JSON.
 
-  METHOD reference_json.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
-    IF iv_reference IS INITIAL.
+    IF IV_REFERENCE IS INITIAL.
+
       RETURN.
+
     ENDIF.
-    lv_text = lcl_sms_json=>escape( iv_reference ).
-    CONCATENATE `,"referansID":"` lv_text `"` INTO rv_json.
+    LV_TEXT = LCL_SMS_JSON=>ESCAPE( IV_REFERENCE ).
+    CONCATENATE `,"referansID":"` LV_TEXT `"` INTO RV_JSON.
+
   ENDMETHOD.
 
+  METHOD ROW_PATH.
 
-  METHOD row_path.
-    DATA lv_row TYPE string.
+    DATA LV_ROW TYPE STRING.
 
-    lv_row = int_text( iv_row ).
-    CONCATENATE iv_list `/` lv_row `/` iv_field INTO rv_path.
+    LV_ROW = INT_TEXT( IV_ROW ).
+    CONCATENATE IV_LIST `/` LV_ROW `/` IV_FIELD INTO RV_PATH.
+
   ENDMETHOD.
 
+  METHOD INT_TEXT.
 
-  METHOD int_text.
-    DATA lv_char TYPE c LENGTH 11.
+    DATA LV_CHAR TYPE C LENGTH 11.
 
-    lv_char = iv_value.
-    CONDENSE lv_char.
-    rv_text = lv_char.
+    LV_CHAR = IV_VALUE.
+    CONDENSE LV_CHAR.
+    RV_TEXT = LV_CHAR.
+
   ENDMETHOD.
 
+  METHOD STATUS_TEXT.
 
-  METHOD status_text.
-    DATA lv_key TYPE string.
+    DATA LV_KEY TYPE STRING.
 
-    CASE iv_status.
+    CASE IV_STATUS.
+
       WHEN '0' OR '1' OR '2' OR '3' OR '4' OR '11' OR '12' OR '13'
         OR '14' OR '15' OR '16' OR '17' OR '22'.
-        CONCATENATE `S` iv_status INTO lv_key.
-        rv_text = lcl_text=>get( lv_key ).
+
+        CONCATENATE `S` IV_STATUS INTO LV_KEY.
+        RV_TEXT = LCL_TEXT=>GET( LV_KEY ).
+
       WHEN OTHERS.
-        rv_text = iv_status.
+
+        RV_TEXT = IV_STATUS.
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD STATS_TEXT.
 
-  METHOD stats_text.
-    DATA lv_key TYPE string.
+    DATA LV_KEY TYPE STRING.
 
-    CONCATENATE `ST_` iv_status INTO lv_key.
-    rv_text = lcl_text=>get( lv_key ).
-    IF rv_text = lv_key.
-      rv_text = iv_status.
+    CONCATENATE `ST_` IV_STATUS INTO LV_KEY.
+    RV_TEXT = LCL_TEXT=>GET( LV_KEY ).
+    IF RV_TEXT EQ LV_KEY.
+
+      RV_TEXT = IV_STATUS.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ERROR_TEXT.
 
-  METHOD error_text.
-    DATA lv_key TYPE string.
+    DATA LV_KEY TYPE STRING.
 
-    CASE iv_error.
+    CASE IV_ERROR.
+
       WHEN '' OR '0'.
-        CLEAR rv_text.
+
+        CLEAR RV_TEXT.
+
       WHEN '101' OR '102' OR '103' OR '104' OR '105' OR '106'
         OR '111' OR '112' OR '113' OR '114' OR '115' OR '116'
         OR '117' OR '119'.
-        CONCATENATE `E` iv_error INTO lv_key.
-        rv_text = lcl_text=>get( lv_key ).
+
+        CONCATENATE `E` IV_ERROR INTO LV_KEY.
+        RV_TEXT = LCL_TEXT=>GET( LV_KEY ).
+
       WHEN OTHERS.
-        rv_text = lcl_text=>get( iv_key = 'E_OTHER'
-                                 iv_1   = iv_error ).
+
+        RV_TEXT = LCL_TEXT=>GET( IV_KEY = 'E_OTHER'
+                                 IV_1   = IV_ERROR ).
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD OPERATOR_NAME.
 
-  METHOD operator_name.
-    CASE iv_operator.
+    CASE IV_OPERATOR.
+
       WHEN '10'.
-        rv_name = `Vodafone`.
+
+        RV_NAME = `Vodafone`.
+
       WHEN '20'.
-        rv_name = `Türk Telekom`.
+
+        RV_NAME = `Türk Telekom`.
+
       WHEN '30'.
-        rv_name = `Turkcell`.
+
+        RV_NAME = `Turkcell`.
+
       WHEN '40'.
-        rv_name = `Netgsm STH`.
+
+        RV_NAME = `Netgsm STH`.
+
       WHEN '41'.
-        rv_name = `Netgsm Mobil`.
+
+        RV_NAME = `Netgsm Mobil`.
+
       WHEN '60'.
-        rv_name = lcl_text=>get( 'OP_60' ).
+
+        RV_NAME = LCL_TEXT=>GET( 'OP_60' ).
+
       WHEN '70'.
-        rv_name = lcl_text=>get( 'OP_70' ).
+
+        RV_NAME = LCL_TEXT=>GET( 'OP_70' ).
+
       WHEN '160'.
-        rv_name = `KKTC Vodafone`.
+
+        RV_NAME = `KKTC Vodafone`.
+
       WHEN '880'.
-        rv_name = `KKTC Turkcell`.
+
+        RV_NAME = `KKTC Turkcell`.
+
       WHEN '212' OR '213' OR '214' OR '215'.
-        rv_name = lcl_text=>get( 'OP_ABROAD' ).
+
+        RV_NAME = LCL_TEXT=>GET( 'OP_ABROAD' ).
+
       WHEN OTHERS.
-        rv_name = iv_operator.
+
+        RV_NAME = IV_OPERATOR.
+
     ENDCASE.
+
   ENDMETHOD.
 
 ENDCLASS.
-
-
 
 *----------------------------------------------------------------------*
 * Application log (SLG1). Object ZCHE_SMS has to be created once in
 * SLG0; without it nothing is saved and the program says so. The
 * message text is only logged when asked for.
 *----------------------------------------------------------------------*
-CLASS lcl_sms_log DEFINITION FINAL.
+CLASS LCL_SMS_LOG DEFINITION FINAL.
   PUBLIC SECTION.
-    CONSTANTS object TYPE balobj_d VALUE 'ZCHE_SMS'.
+    CONSTANTS OBJECT TYPE BALOBJ_D VALUE 'ZCHE_SMS'.
 
-    CLASS-METHODS write
+    CLASS-METHODS WRITE
       IMPORTING
-        is_result      TYPE lif_sms=>ty_result
-        iv_with_text   TYPE abap_bool
+        IS_RESULT      TYPE LIF_SMS=>TY_RESULT
+        IV_WITH_TEXT   TYPE ABAP_BOOL
       RETURNING
-        value(rv_saved) TYPE abap_bool.
+        VALUE(RV_SAVED) TYPE ABAP_BOOL.
 
     "! One line, for a cancel
-    CLASS-METHODS write_simple
+    CLASS-METHODS WRITE_SIMPLE
       IMPORTING
-        iv_action       TYPE lif_sms=>ty_action
-        iv_code         TYPE string
-        iv_message      TYPE string
-        iv_jobid        TYPE string
+        IV_ACTION       TYPE LIF_SMS=>TY_ACTION
+        IV_CODE         TYPE STRING
+        IV_MESSAGE      TYPE STRING
+        IV_JOBID        TYPE STRING
       RETURNING
-        value(rv_saved) TYPE abap_bool.
+        VALUE(RV_SAVED) TYPE ABAP_BOOL.
 
   PRIVATE SECTION.
-    CLASS-METHODS create
+    CLASS-METHODS CREATE
       IMPORTING
-        iv_extnumber     TYPE csequence
+        IV_EXTNUMBER     TYPE CSEQUENCE
       RETURNING
-        value(rv_handle) TYPE balloghndl.
+        VALUE(RV_HANDLE) TYPE BALLOGHNDL.
 
-    CLASS-METHODS save
+    CLASS-METHODS SAVE
       IMPORTING
-        iv_handle       TYPE balloghndl
+        IV_HANDLE       TYPE BALLOGHNDL
       RETURNING
-        value(rv_saved) TYPE abap_bool.
+        VALUE(RV_SAVED) TYPE ABAP_BOOL.
 
-    CLASS-METHODS add
+    CLASS-METHODS ADD
       IMPORTING
-        iv_handle TYPE balloghndl
-        iv_type   TYPE symsgty
-        iv_text   TYPE string.
+        IV_HANDLE TYPE BALLOGHNDL
+        IV_TYPE   TYPE SYMSGTY
+        IV_TEXT   TYPE STRING.
 ENDCLASS.
 
+CLASS LCL_SMS_LOG IMPLEMENTATION.
 
-CLASS lcl_sms_log IMPLEMENTATION.
+  METHOD WRITE.
 
-  METHOD write.
-    DATA lv_handle TYPE balloghndl.
-    DATA lv_type TYPE symsgty.
-    DATA lv_text TYPE string.
-    DATA lv_parts TYPE c LENGTH 11.
-    DATA lv_action TYPE string.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    IF is_result-jobid IS NOT INITIAL.
-      lv_handle = create( is_result-jobid ).
+    DATA: LV_HANDLE TYPE BALLOGHNDL,
+          LV_TYPE   TYPE SYMSGTY,
+          LV_TEXT   TYPE STRING,
+          LV_PARTS  TYPE C LENGTH 11,
+          LV_ACTION TYPE STRING.
+
+    IF IS_RESULT-JOBID IS NOT INITIAL.
+
+      LV_HANDLE = CREATE( IS_RESULT-JOBID ).
+
     ELSE.
-      lv_handle = create( is_result-code ).
+
+      LV_HANDLE = CREATE( IS_RESULT-CODE ).
+
     ENDIF.
-    IF lv_handle IS INITIAL.
+    IF LV_HANDLE IS INITIAL.
+
       RETURN.
+
     ENDIF.
 
-    IF is_result-sent = abap_true.
-      lv_type = 'S'.
+    IF IS_RESULT-SENT EQ ABAP_TRUE.
+
+      LV_TYPE = 'S'.
+
     ELSE.
-      lv_type = 'E'.
-    ENDIF.
-    lv_action = is_result-action.
-    CONCATENATE lv_action ` ` is_result-code `: ` is_result-message
-                INTO lv_text.
-    IF is_result-jobid IS NOT INITIAL.
-      CONCATENATE lv_text ` (jobid ` is_result-jobid `)` INTO lv_text.
-    ENDIF.
-    add( iv_handle = lv_handle iv_type = lv_type iv_text = lv_text ).
 
-    lv_parts = is_result-text_info-parts.
-    CONDENSE lv_parts.
-    lv_text = lcl_text=>get( iv_key = 'LOG_SUMMARY'
-                             iv_1   = is_result-header
-                             iv_2   = is_result-text_info-encoding
-                             iv_3   = lv_parts ).
-    add( iv_handle = lv_handle iv_type = 'I' iv_text = lv_text ).
+      LV_TYPE = 'E'.
 
-    LOOP AT is_result-recipients INTO ls_recipient.
-      IF ls_recipient-ok = abap_true.
-        lv_text = ls_recipient-masked.
-        add( iv_handle = lv_handle iv_type = 'I' iv_text = lv_text ).
+    ENDIF.
+    LV_ACTION = IS_RESULT-ACTION.
+    CONCATENATE LV_ACTION ` ` IS_RESULT-CODE `: ` IS_RESULT-MESSAGE
+      INTO LV_TEXT.
+    IF IS_RESULT-JOBID IS NOT INITIAL.
+
+      CONCATENATE LV_TEXT ` (jobid ` IS_RESULT-JOBID `)` INTO LV_TEXT.
+
+    ENDIF.
+    ADD( IV_HANDLE = LV_HANDLE IV_TYPE = LV_TYPE IV_TEXT = LV_TEXT ).
+
+    LV_PARTS = IS_RESULT-TEXT_INFO-PARTS.
+    CONDENSE LV_PARTS.
+    LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'LOG_SUMMARY'
+                             IV_1   = IS_RESULT-HEADER
+                             IV_2   = IS_RESULT-TEXT_INFO-ENCODING
+                             IV_3   = LV_PARTS ).
+    ADD( IV_HANDLE = LV_HANDLE IV_TYPE = 'I' IV_TEXT = LV_TEXT ).
+
+    LOOP AT IS_RESULT-RECIPIENTS INTO LS_RECIPIENT.
+
+      IF LS_RECIPIENT-OK EQ ABAP_TRUE.
+
+        LV_TEXT = LS_RECIPIENT-MASKED.
+        ADD( IV_HANDLE = LV_HANDLE IV_TYPE = 'I' IV_TEXT = LV_TEXT ).
+
       ELSE.
-        CONCATENATE ls_recipient-masked `: ` ls_recipient-reason
-                    INTO lv_text.
-        add( iv_handle = lv_handle iv_type = 'W' iv_text = lv_text ).
+
+        CONCATENATE LS_RECIPIENT-MASKED `: ` LS_RECIPIENT-REASON
+          INTO LV_TEXT.
+        ADD( IV_HANDLE = LV_HANDLE IV_TYPE = 'W' IV_TEXT = LV_TEXT ).
+
       ENDIF.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
 
-    IF iv_with_text = abap_true
-       AND is_result-action <> lif_sms=>action-otp
-       AND is_result-text_info-text IS NOT INITIAL.
-      lv_text = lcl_text=>get( iv_key = 'LOG_TEXT'
-                               iv_1   = is_result-text_info-text ).
-      add( iv_handle = lv_handle iv_type = 'I' iv_text = lv_text ).
+    CLEAR LS_RECIPIENT.
+
+    IF IV_WITH_TEXT EQ ABAP_TRUE
+       AND IS_RESULT-ACTION NE LIF_SMS=>ACTION-OTP
+       AND IS_RESULT-TEXT_INFO-TEXT IS NOT INITIAL.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'LOG_TEXT'
+                               IV_1   = IS_RESULT-TEXT_INFO-TEXT ).
+      ADD( IV_HANDLE = LV_HANDLE IV_TYPE = 'I' IV_TEXT = LV_TEXT ).
+
     ENDIF.
 
-    rv_saved = save( lv_handle ).
+    RV_SAVED = SAVE( LV_HANDLE ).
+
   ENDMETHOD.
 
+  METHOD WRITE_SIMPLE.
 
-  METHOD write_simple.
-    DATA lv_handle TYPE balloghndl.
-    DATA lv_type TYPE symsgty.
-    DATA lv_text TYPE string.
-    DATA lv_action TYPE string.
+    DATA: LV_HANDLE TYPE BALLOGHNDL,
+          LV_TYPE   TYPE SYMSGTY,
+          LV_TEXT   TYPE STRING,
+          LV_ACTION TYPE STRING.
 
-    lv_handle = create( iv_jobid ).
-    IF lv_handle IS INITIAL.
+    LV_HANDLE = CREATE( IV_JOBID ).
+    IF LV_HANDLE IS INITIAL.
+
       RETURN.
+
     ENDIF.
-    IF iv_code = lif_sms=>code-ok.
-      lv_type = 'S'.
+    IF IV_CODE EQ LIF_SMS=>CODE-OK.
+
+      LV_TYPE = 'S'.
+
     ELSE.
-      lv_type = 'E'.
+
+      LV_TYPE = 'E'.
+
     ENDIF.
-    lv_action = iv_action.
-    CONCATENATE lv_action ` ` iv_code `: ` iv_message INTO lv_text.
-    add( iv_handle = lv_handle iv_type = lv_type iv_text = lv_text ).
-    rv_saved = save( lv_handle ).
+    LV_ACTION = IV_ACTION.
+    CONCATENATE LV_ACTION ` ` IV_CODE `: ` IV_MESSAGE INTO LV_TEXT.
+    ADD( IV_HANDLE = LV_HANDLE IV_TYPE = LV_TYPE IV_TEXT = LV_TEXT ).
+    RV_SAVED = SAVE( LV_HANDLE ).
+
   ENDMETHOD.
 
+  METHOD CREATE.
 
-  METHOD create.
-    DATA ls_log TYPE bal_s_log.
+    DATA LS_LOG TYPE BAL_S_LOG.
 
-    ls_log-object = object.
-    ls_log-extnumber = iv_extnumber.
-    ls_log-aluser = sy-uname.
-    ls_log-alprog = sy-cprog.
+    LS_LOG-OBJECT = OBJECT.
+    LS_LOG-EXTNUMBER = IV_EXTNUMBER.
+    LS_LOG-ALUSER = SY-UNAME.
+    LS_LOG-ALPROG = SY-CPROG.
     CALL FUNCTION 'BAL_LOG_CREATE'
       EXPORTING
-        i_s_log      = ls_log
+        I_S_LOG      = LS_LOG
       IMPORTING
-        e_log_handle = rv_handle
+        E_LOG_HANDLE = RV_HANDLE
       EXCEPTIONS
         OTHERS       = 1.
-    IF sy-subrc <> 0.
-      CLEAR rv_handle.
+    IF SY-SUBRC NE 0.
+
+      CLEAR RV_HANDLE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SAVE.
 
-  METHOD save.
-    DATA lt_handles TYPE bal_t_logh.
+    DATA LT_HANDLES TYPE BAL_T_LOGH.
 
-    APPEND iv_handle TO lt_handles.
+    APPEND IV_HANDLE TO LT_HANDLES.
     CALL FUNCTION 'BAL_DB_SAVE'
       EXPORTING
-        i_t_log_handle = lt_handles
+        I_T_LOG_HANDLE = LT_HANDLES
       EXCEPTIONS
         OTHERS         = 1.
-    IF sy-subrc = 0.
-      rv_saved = abap_true.
+    IF SY-SUBRC EQ 0.
+
+      RV_SAVED = ABAP_TRUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ADD.
 
-  METHOD add.
     " Free text is limited to 200 characters per message
-    DATA lv_chunk TYPE c LENGTH 200.
-    DATA lv_len TYPE i.
-    DATA lv_off TYPE i.
-    DATA lv_take TYPE i.
+    DATA: LV_CHUNK TYPE C LENGTH 200,
+          LV_LEN   TYPE I,
+          LV_OFF   TYPE I,
+          LV_TAKE  TYPE I.
 
-    lv_len = strlen( iv_text ).
-    WHILE lv_off < lv_len.
-      lv_take = lv_len - lv_off.
-      IF lv_take > 200.
-        lv_take = 200.
+    LV_LEN = STRLEN( IV_TEXT ).
+    WHILE LV_OFF LT LV_LEN.
+
+      LV_TAKE = LV_LEN - LV_OFF.
+      IF LV_TAKE GT 200.
+
+        LV_TAKE = 200.
+
       ENDIF.
-      lv_chunk = iv_text+lv_off(lv_take).
+      LV_CHUNK = IV_TEXT+LV_OFF(LV_TAKE).
       CALL FUNCTION 'BAL_LOG_MSG_ADD_FREE_TEXT'
         EXPORTING
-          i_log_handle = iv_handle
-          i_msgty      = iv_type
-          i_text       = lv_chunk
+          I_LOG_HANDLE = IV_HANDLE
+          I_MSGTY      = IV_TYPE
+          I_TEXT       = LV_CHUNK
         EXCEPTIONS
           OTHERS       = 1.
-      IF sy-subrc <> 0.
+      IF SY-SUBRC NE 0.
+
         EXIT.
+
       ENDIF.
-      lv_off = lv_off + lv_take.
+      LV_OFF = LV_OFF + LV_TAKE.
+
     ENDWHILE.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Selection screen. Choose the action; the screen shows only its
 * fields. Save it as a variant for a job.
 *----------------------------------------------------------------------*
-DATA gv_number TYPE c LENGTH 40.
-DATA gv_jobid TYPE c LENGTH 40.
-DATA gv_param TYPE c LENGTH 132.
-DATA gv_action TYPE lif_sms=>ty_action.
+DATA GV_NUMBER TYPE C LENGTH 40.
+DATA GV_JOBID TYPE C LENGTH 40.
+DATA GV_PARAM TYPE C LENGTH 132.
+DATA GV_ACTION TYPE LIF_SMS=>TY_ACTION.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_act WITH FRAME TITLE t_act.
-PARAMETERS p_act LIKE gv_action AS LISTBOX VISIBLE LENGTH 40
-                 USER-COMMAND act DEFAULT 'SEND' OBLIGATORY.
-PARAMETERS p_dry AS CHECKBOX DEFAULT 'X' MODIF ID snd.
-PARAMETERS p_logtx AS CHECKBOX MODIF ID log.
-PARAMETERS p_nlen AS CHECKBOX MODIF ID nln.
-SELECTION-SCREEN END OF BLOCK b_act.
+SELECTION-SCREEN BEGIN OF BLOCK B_ACT WITH FRAME TITLE T_ACT.
+PARAMETERS P_ACT LIKE GV_ACTION AS LISTBOX VISIBLE LENGTH 40
+                 USER-COMMAND ACT DEFAULT 'SEND' OBLIGATORY.
+PARAMETERS P_DRY AS CHECKBOX DEFAULT 'X' MODIF ID SND.
+PARAMETERS P_LOGTX AS CHECKBOX MODIF ID LOG.
+PARAMETERS P_NLEN AS CHECKBOX MODIF ID NLN.
+SELECTION-SCREEN END OF BLOCK B_ACT.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_msg WITH FRAME TITLE t_msg.
-SELECT-OPTIONS s_no FOR gv_number NO INTERVALS MODIF ID num.
-PARAMETERS p_head TYPE c LENGTH 11 LOWER CASE MODIF ID hdr.
-SELECTION-SCREEN COMMENT /1(70) c_txt MODIF ID txt.
-PARAMETERS p_txt1 TYPE c LENGTH 132 LOWER CASE VISIBLE LENGTH 45
-                  MODIF ID txt.
-PARAMETERS p_txt2 TYPE c LENGTH 132 LOWER CASE VISIBLE LENGTH 45
-                  MODIF ID txt.
-PARAMETERS p_txt3 TYPE c LENGTH 132 LOWER CASE VISIBLE LENGTH 45
-                  MODIF ID txt.
-PARAMETERS p_txt4 TYPE c LENGTH 132 LOWER CASE VISIBLE LENGTH 45
-                  MODIF ID txt.
-PARAMETERS p_enc TYPE c LENGTH 7 AS LISTBOX VISIBLE LENGTH 40
-                 DEFAULT 'AUTO' MODIF ID enc.
-PARAMETERS p_iys TYPE c LENGTH 2 AS LISTBOX VISIBLE LENGTH 40
-                 DEFAULT '0' MODIF ID iys.
-SELECTION-SCREEN END OF BLOCK b_msg.
+SELECTION-SCREEN BEGIN OF BLOCK B_MSG WITH FRAME TITLE T_MSG.
+SELECT-OPTIONS S_NO FOR GV_NUMBER NO INTERVALS MODIF ID NUM.
+PARAMETERS P_HEAD TYPE C LENGTH 11 LOWER CASE MODIF ID HDR.
+SELECTION-SCREEN COMMENT /1(70) C_TXT MODIF ID TXT.
+PARAMETERS P_TXT1 TYPE C LENGTH 132 LOWER CASE VISIBLE LENGTH 45
+                  MODIF ID TXT.
+PARAMETERS P_TXT2 TYPE C LENGTH 132 LOWER CASE VISIBLE LENGTH 45
+                  MODIF ID TXT.
+PARAMETERS P_TXT3 TYPE C LENGTH 132 LOWER CASE VISIBLE LENGTH 45
+                  MODIF ID TXT.
+PARAMETERS P_TXT4 TYPE C LENGTH 132 LOWER CASE VISIBLE LENGTH 45
+                  MODIF ID TXT.
+PARAMETERS P_ENC TYPE C LENGTH 7 AS LISTBOX VISIBLE LENGTH 40
+                 DEFAULT 'AUTO' MODIF ID ENC.
+PARAMETERS P_IYS TYPE C LENGTH 2 AS LISTBOX VISIBLE LENGTH 40
+                 DEFAULT '0' MODIF ID IYS.
+SELECTION-SCREEN END OF BLOCK B_MSG.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_tpl WITH FRAME TITLE t_tpl.
-PARAMETERS p_tid TYPE n LENGTH 9 MODIF ID tpl.
-SELECTION-SCREEN COMMENT /1(70) c_tpar MODIF ID tpl.
-SELECT-OPTIONS s_tpar FOR gv_param NO INTERVALS LOWER CASE
-                      MODIF ID tpl.
-SELECTION-SCREEN END OF BLOCK b_tpl.
+SELECTION-SCREEN BEGIN OF BLOCK B_TPL WITH FRAME TITLE T_TPL.
+PARAMETERS P_TID TYPE N LENGTH 9 MODIF ID TPL.
+SELECTION-SCREEN COMMENT /1(70) C_TPAR MODIF ID TPL.
+SELECT-OPTIONS S_TPAR FOR GV_PARAM NO INTERVALS LOWER CASE
+                      MODIF ID TPL.
+SELECTION-SCREEN END OF BLOCK B_TPL.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_sch WITH FRAME TITLE t_sch.
-PARAMETERS p_sdate TYPE d MODIF ID sch.
-PARAMETERS p_stime TYPE t MODIF ID sch.
-PARAMETERS p_edate TYPE d MODIF ID sch.
-PARAMETERS p_etime TYPE t MODIF ID sch.
-PARAMETERS p_ref TYPE c LENGTH 50 LOWER CASE MODIF ID sch.
-SELECTION-SCREEN END OF BLOCK b_sch.
+SELECTION-SCREEN BEGIN OF BLOCK B_SCH WITH FRAME TITLE T_SCH.
+PARAMETERS P_SDATE TYPE D MODIF ID SCH.
+PARAMETERS P_STIME TYPE T MODIF ID SCH.
+PARAMETERS P_EDATE TYPE D MODIF ID SCH.
+PARAMETERS P_ETIME TYPE T MODIF ID SCH.
+PARAMETERS P_REF TYPE C LENGTH 50 LOWER CASE MODIF ID SCH.
+SELECTION-SCREEN END OF BLOCK B_SCH.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_job WITH FRAME TITLE t_job.
-SELECTION-SCREEN COMMENT /1(70) c_job MODIF ID job.
-SELECT-OPTIONS s_job FOR gv_jobid NO INTERVALS MODIF ID job.
-PARAMETERS p_rfrom TYPE d MODIF ID rdt.
-PARAMETERS p_rto TYPE d MODIF ID rdt.
-PARAMETERS p_sendd TYPE d MODIF ID sdt.
-SELECTION-SCREEN COMMENT /1(70) c_inb MODIF ID inb.
-PARAMETERS p_full AS CHECKBOX MODIF ID inb.
-SELECTION-SCREEN END OF BLOCK b_job.
+SELECTION-SCREEN BEGIN OF BLOCK B_JOB WITH FRAME TITLE T_JOB.
+SELECTION-SCREEN COMMENT /1(70) C_JOB MODIF ID JOB.
+SELECT-OPTIONS S_JOB FOR GV_JOBID NO INTERVALS MODIF ID JOB.
+PARAMETERS P_RFROM TYPE D MODIF ID RDT.
+PARAMETERS P_RTO TYPE D MODIF ID RDT.
+PARAMETERS P_SENDD TYPE D MODIF ID SDT.
+SELECTION-SCREEN COMMENT /1(70) C_INB MODIF ID INB.
+PARAMETERS P_FULL AS CHECKBOX MODIF ID INB.
+SELECTION-SCREEN END OF BLOCK B_JOB.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_tls WITH FRAME TITLE t_tls.
-PARAMETERS p_tsrch TYPE c LENGTH 50 LOWER CASE MODIF ID tls.
-PARAMETERS p_tcont TYPE c LENGTH 50 LOWER CASE MODIF ID tls.
-PARAMETERS p_ttype TYPE c LENGTH 40 MODIF ID tls.
-PARAMETERS p_tpub AS CHECKBOX DEFAULT 'X' MODIF ID tls.
-PARAMETERS p_tpage TYPE n LENGTH 4 MODIF ID tls.
-SELECTION-SCREEN END OF BLOCK b_tls.
+SELECTION-SCREEN BEGIN OF BLOCK B_TLS WITH FRAME TITLE T_TLS.
+PARAMETERS P_TSRCH TYPE C LENGTH 50 LOWER CASE MODIF ID TLS.
+PARAMETERS P_TCONT TYPE C LENGTH 50 LOWER CASE MODIF ID TLS.
+PARAMETERS P_TTYPE TYPE C LENGTH 40 MODIF ID TLS.
+PARAMETERS P_TPUB AS CHECKBOX DEFAULT 'X' MODIF ID TLS.
+PARAMETERS P_TPAGE TYPE N LENGTH 4 MODIF ID TLS.
+SELECTION-SCREEN END OF BLOCK B_TLS.
 
-SELECTION-SCREEN BEGIN OF BLOCK b_con WITH FRAME TITLE t_con.
-PARAMETERS p_dest TYPE rfcdest DEFAULT 'ZCHE_NETGSM' OBLIGATORY.
-PARAMETERS p_dext TYPE rfcdest DEFAULT 'ZCHE_NETGSM_EXT'
-                  MODIF ID ext.
-SELECTION-SCREEN END OF BLOCK b_con.
-
+SELECTION-SCREEN BEGIN OF BLOCK B_CON WITH FRAME TITLE T_CON.
+PARAMETERS P_DEST TYPE RFCDEST DEFAULT 'ZCHE_NETGSM' OBLIGATORY.
+PARAMETERS P_DEXT TYPE RFCDEST DEFAULT 'ZCHE_NETGSM_EXT'
+                  MODIF ID EXT.
+SELECTION-SCREEN END OF BLOCK B_CON.
 
 *----------------------------------------------------------------------*
 * The program around the classes: screen, list, job log, popup
 *----------------------------------------------------------------------*
-CLASS lcl_app DEFINITION FINAL.
+CLASS LCL_APP DEFINITION FINAL.
   PUBLIC SECTION.
-    CLASS-METHODS set_texts.
-    CLASS-METHODS set_screen.
-    CLASS-METHODS run.
+    CLASS-METHODS SET_TEXTS.
+    CLASS-METHODS SET_SCREEN.
+    CLASS-METHODS RUN.
 
     "! Is a screen group (MODIF ID) used by this action?
-    CLASS-METHODS shows
+    CLASS-METHODS SHOWS
       IMPORTING
-        iv_group      TYPE csequence
-        iv_action     TYPE lif_sms=>ty_action
+        IV_GROUP      TYPE CSEQUENCE
+        IV_ACTION     TYPE LIF_SMS=>TY_ACTION
       RETURNING
-        value(rv_yes) TYPE abap_bool.
+        VALUE(RV_YES) TYPE ABAP_BOOL.
 
     "! name=value lines to template values
-    CLASS-METHODS params_of
+    CLASS-METHODS PARAMS_OF
       IMPORTING
-        it_lines         TYPE string_table
+        IT_LINES         TYPE STRING_TABLE
       RETURNING
-        value(rt_params) TYPE lif_sms=>ty_params.
+        VALUE(RT_PARAMS) TYPE LIF_SMS=>TY_PARAMS.
 
   PRIVATE SECTION.
-    TYPES ty_texts TYPE STANDARD TABLE OF rsseltexts
+    TYPES TY_TEXTS TYPE STANDARD TABLE OF RSSELTEXTS
                    WITH DEFAULT KEY.
 
-    CLASS-DATA go_sms TYPE REF TO lcl_sms_netgsm.
+    CLASS-DATA GO_SMS TYPE REF TO LCL_SMS_NETGSM.
 
-    CLASS-METHODS set_listboxes.
+    CLASS-METHODS SET_LISTBOXES.
 
-    CLASS-METHODS run_send.
-    CLASS-METHODS run_cancel.
-    CLASS-METHODS run_report.
-    CLASS-METHODS run_stats.
-    CLASS-METHODS run_inbox.
-    CLASS-METHODS run_headers.
-    CLASS-METHODS run_templates.
-    CLASS-METHODS run_length.
+    CLASS-METHODS RUN_SEND.
+    CLASS-METHODS RUN_CANCEL.
+    CLASS-METHODS RUN_REPORT.
+    CLASS-METHODS RUN_STATS.
+    CLASS-METHODS RUN_INBOX.
+    CLASS-METHODS RUN_HEADERS.
+    CLASS-METHODS RUN_TEMPLATES.
+    CLASS-METHODS RUN_LENGTH.
 
     "! The send of the chosen action with the screen's values
-    CLASS-METHODS send_from_screen
+    CLASS-METHODS SEND_FROM_SCREEN
       IMPORTING
-        iv_dry_run       TYPE abap_bool
+        IV_DRY_RUN       TYPE ABAP_BOOL
       RETURNING
-        value(rs_result) TYPE lif_sms=>ty_result.
+        VALUE(RS_RESULT) TYPE LIF_SMS=>TY_RESULT.
 
-    CLASS-METHODS screen_text
+    CLASS-METHODS SCREEN_TEXT
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS screen_numbers
+    CLASS-METHODS SCREEN_NUMBERS
       RETURNING
-        value(rt_numbers) TYPE string_table.
+        VALUE(RT_NUMBERS) TYPE STRING_TABLE.
 
-    CLASS-METHODS screen_jobids
+    CLASS-METHODS SCREEN_JOBIDS
       RETURNING
-        value(rt_jobids) TYPE string_table.
+        VALUE(RT_JOBIDS) TYPE STRING_TABLE.
 
-    CLASS-METHODS confirm
+    CLASS-METHODS CONFIRM
       IMPORTING
-        iv_title      TYPE string
-        iv_question   TYPE string
+        IV_TITLE      TYPE STRING
+        IV_QUESTION   TYPE STRING
       RETURNING
-        value(rv_yes) TYPE abap_bool.
+        VALUE(RV_YES) TYPE ABAP_BOOL.
 
-    CLASS-METHODS show_result
+    CLASS-METHODS SHOW_RESULT
       IMPORTING
-        is_result TYPE lif_sms=>ty_result.
+        IS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    CLASS-METHODS show_length
+    CLASS-METHODS SHOW_LENGTH
       IMPORTING
-        is_length TYPE lif_sms=>ty_length.
+        IS_LENGTH TYPE LIF_SMS=>TY_LENGTH.
 
-    CLASS-METHODS show_log_state
+    CLASS-METHODS SHOW_LOG_STATE
       IMPORTING
-        iv_saved TYPE abap_bool.
+        IV_SAVED TYPE ABAP_BOOL.
 
-    CLASS-METHODS heading
+    CLASS-METHODS HEADING
       IMPORTING
-        iv_key TYPE csequence.
+        IV_KEY TYPE CSEQUENCE.
 
-    CLASS-METHODS write_code
+    CLASS-METHODS WRITE_CODE
       IMPORTING
-        iv_code    TYPE string
-        iv_message TYPE string.
+        IV_CODE    TYPE STRING
+        IV_MESSAGE TYPE STRING.
 
-    CLASS-METHODS write_long
+    CLASS-METHODS WRITE_LONG
       IMPORTING
-        iv_text   TYPE string
-        iv_indent TYPE i DEFAULT 3.
+        IV_TEXT   TYPE STRING
+        IV_INDENT TYPE I DEFAULT 3.
 
-    CLASS-METHODS credits
+    CLASS-METHODS CREDITS
       IMPORTING
-        is_result       TYPE lif_sms=>ty_result
+        IS_RESULT       TYPE LIF_SMS=>TY_RESULT
       RETURNING
-        value(rv_count) TYPE string.
+        VALUE(RV_COUNT) TYPE STRING.
 
     "! Success to the job log; an error cancels a background job
-    CLASS-METHODS finish
+    CLASS-METHODS FINISH
       IMPORTING
-        iv_ok   TYPE abap_bool
-        iv_text TYPE string.
+        IV_OK   TYPE ABAP_BOOL
+        IV_TEXT TYPE STRING.
 
-    CLASS-METHODS add_text
+    CLASS-METHODS ADD_TEXT
       IMPORTING
-        iv_name  TYPE csequence
-        iv_kind  TYPE c
+        IV_NAME  TYPE CSEQUENCE
+        IV_KIND  TYPE C
       CHANGING
-        ct_texts TYPE ty_texts.
+        CT_TEXTS TYPE TY_TEXTS.
 
-    CLASS-METHODS add_value
+    CLASS-METHODS ADD_VALUE
       IMPORTING
-        iv_key    TYPE csequence
-        iv_text   TYPE csequence
+        IV_KEY    TYPE CSEQUENCE
+        IV_TEXT   TYPE CSEQUENCE
       CHANGING
-        ct_values TYPE vrm_values.
+        CT_VALUES TYPE VRM_VALUES.
 ENDCLASS.
 
+CLASS LCL_APP IMPLEMENTATION.
 
-CLASS lcl_app IMPLEMENTATION.
+  METHOD SET_TEXTS.
 
-  METHOD set_texts.
-    DATA lt_texts TYPE ty_texts.
+    DATA LT_TEXTS TYPE TY_TEXTS.
 
-    t_act = lcl_text=>get( 'T_RUN' ).
-    t_msg = lcl_text=>get( 'T_MSG' ).
-    t_tpl = lcl_text=>get( 'T_TPL' ).
-    t_sch = lcl_text=>get( 'T_SCH' ).
-    t_job = lcl_text=>get( 'T_JOB' ).
-    t_tls = lcl_text=>get( 'T_TLS' ).
-    t_con = lcl_text=>get( 'T_CON' ).
-    c_txt = lcl_text=>get( 'C_TXT' ).
-    c_tpar = lcl_text=>get( 'C_TPAR' ).
-    c_job = lcl_text=>get( 'C_JOB' ).
-    c_inb = lcl_text=>get( 'C_INB' ).
+    T_ACT = LCL_TEXT=>GET( 'T_RUN' ).
+    T_MSG = LCL_TEXT=>GET( 'T_MSG' ).
+    T_TPL = LCL_TEXT=>GET( 'T_TPL' ).
+    T_SCH = LCL_TEXT=>GET( 'T_SCH' ).
+    T_JOB = LCL_TEXT=>GET( 'T_JOB' ).
+    T_TLS = LCL_TEXT=>GET( 'T_TLS' ).
+    T_CON = LCL_TEXT=>GET( 'T_CON' ).
+    C_TXT = LCL_TEXT=>GET( 'C_TXT' ).
+    C_TPAR = LCL_TEXT=>GET( 'C_TPAR' ).
+    C_JOB = LCL_TEXT=>GET( 'C_JOB' ).
+    C_INB = LCL_TEXT=>GET( 'C_INB' ).
 
-    add_text( EXPORTING iv_name = 'P_ACT' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_DRY' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_LOGTX' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_NLEN' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'S_NO' iv_kind = 'S'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_HEAD' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TXT1' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TXT2' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TXT3' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TXT4' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_ENC' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_IYS' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TID' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'S_TPAR' iv_kind = 'S'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_SDATE' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_STIME' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_EDATE' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_ETIME' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_REF' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'S_JOB' iv_kind = 'S'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_RFROM' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_RTO' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_SENDD' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_FULL' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TSRCH' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TCONT' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TTYPE' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TPUB' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_TPAGE' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_DEST' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
-    add_text( EXPORTING iv_name = 'P_DEXT' iv_kind = 'P'
-              CHANGING  ct_texts = lt_texts ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_ACT' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_DRY' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_LOGTX' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_NLEN' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'S_NO' IV_KIND = 'S'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_HEAD' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TXT1' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TXT2' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TXT3' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TXT4' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_ENC' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_IYS' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TID' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'S_TPAR' IV_KIND = 'S'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_SDATE' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_STIME' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_EDATE' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_ETIME' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_REF' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'S_JOB' IV_KIND = 'S'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_RFROM' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_RTO' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_SENDD' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_FULL' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TSRCH' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TCONT' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TTYPE' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TPUB' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_TPAGE' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_DEST' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
+    ADD_TEXT( EXPORTING IV_NAME = 'P_DEXT' IV_KIND = 'P'
+              CHANGING  CT_TEXTS = LT_TEXTS ).
 
     " If this fails, the screen shows the field names; nothing else
     " changes
     CALL FUNCTION 'SELECTION_TEXTS_MODIFY'
       EXPORTING
-        program  = sy-repid
+        PROGRAM  = SY-REPID
       TABLES
-        seltexts = lt_texts
+        SELTEXTS = LT_TEXTS
       EXCEPTIONS
         OTHERS   = 1.
-    IF sy-subrc <> 0.
+    IF SY-SUBRC NE 0.
+
       RETURN.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ADD_TEXT.
 
-  METHOD add_text.
-    DATA ls_text TYPE rsseltexts.
+    DATA LS_TEXT TYPE RSSELTEXTS.
 
-    ls_text-name = iv_name.
-    ls_text-kind = iv_kind.
-    ls_text-text = lcl_text=>get( iv_name ).
-    APPEND ls_text TO ct_texts.
+    LS_TEXT-NAME = IV_NAME.
+    LS_TEXT-KIND = IV_KIND.
+    LS_TEXT-TEXT = LCL_TEXT=>GET( IV_NAME ).
+    APPEND LS_TEXT TO CT_TEXTS.
+
   ENDMETHOD.
 
+  METHOD SET_SCREEN.
 
-  METHOD set_screen.
-    DATA lv_show TYPE abap_bool.
+    DATA LV_SHOW TYPE ABAP_BOOL.
 
-    set_listboxes( ).
+    SET_LISTBOXES( ).
     LOOP AT SCREEN.
-      IF screen-group1 IS INITIAL.
+
+      IF SCREEN-GROUP1 IS INITIAL.
+
         CONTINUE.
+
       ENDIF.
-      lv_show = shows( iv_group  = screen-group1
-                       iv_action = p_act ).
-      IF lv_show = abap_false.
-        screen-active = '0'.
+      LV_SHOW = SHOWS( IV_GROUP  = SCREEN-GROUP1
+                       IV_ACTION = P_ACT ).
+      IF LV_SHOW EQ ABAP_FALSE.
+
+        SCREEN-ACTIVE = '0'.
         MODIFY SCREEN.
+
       ENDIF.
+
     ENDLOOP.
+
   ENDMETHOD.
 
+  METHOD SHOWS.
 
-  METHOD shows.
-    DATA lv_actions TYPE string.
-    DATA lv_action TYPE string.
+    DATA: LV_ACTIONS TYPE STRING,
+          LV_ACTION  TYPE STRING.
 
-    CASE iv_group.
+    CASE IV_GROUP.
+
       WHEN 'SND' OR 'NUM'.
-        lv_actions = `SEND OTP TEMPLATE`.
+
+        LV_ACTIONS = `SEND OTP TEMPLATE`.
+
       WHEN 'LOG'.
-        lv_actions = `SEND TEMPLATE`.
+
+        LV_ACTIONS = `SEND TEMPLATE`.
+
       WHEN 'HDR' OR 'ENC'.
-        lv_actions = `SEND OTP TEMPLATE LENGTH`.
+
+        LV_ACTIONS = `SEND OTP TEMPLATE LENGTH`.
+
       WHEN 'TXT'.
-        lv_actions = `SEND OTP LENGTH`.
+
+        LV_ACTIONS = `SEND OTP LENGTH`.
+
       WHEN 'IYS' OR 'SCH'.
-        lv_actions = `SEND TEMPLATE`.
+
+        LV_ACTIONS = `SEND TEMPLATE`.
+
       WHEN 'NLN'.
-        lv_actions = `SEND`.
+
+        LV_ACTIONS = `SEND`.
+
       WHEN 'TPL'.
-        lv_actions = `TEMPLATE`.
+
+        LV_ACTIONS = `TEMPLATE`.
+
       WHEN 'JOB'.
-        lv_actions = `CANCEL REPORT STATS`.
+
+        LV_ACTIONS = `CANCEL REPORT STATS`.
+
       WHEN 'RDT'.
-        lv_actions = `REPORT INBOX`.
+
+        LV_ACTIONS = `REPORT INBOX`.
+
       WHEN 'SDT'.
-        lv_actions = `STATS`.
+
+        LV_ACTIONS = `STATS`.
+
       WHEN 'INB'.
-        lv_actions = `INBOX`.
+
+        LV_ACTIONS = `INBOX`.
+
       WHEN 'TLS'.
-        lv_actions = `TPLLIST`.
+
+        LV_ACTIONS = `TPLLIST`.
+
       WHEN 'EXT'.
-        lv_actions = `TEMPLATE TPLLIST`.
+
+        LV_ACTIONS = `TEMPLATE TPLLIST`.
+
       WHEN OTHERS.
-        rv_yes = abap_true.
+
+        RV_YES = ABAP_TRUE.
         RETURN.
+
     ENDCASE.
-    lv_action = iv_action.
-    CONCATENATE ` ` lv_actions ` ` INTO lv_actions.
-    CONCATENATE ` ` lv_action ` ` INTO lv_action.
-    IF lv_actions CS lv_action.
-      rv_yes = abap_true.
+    LV_ACTION = IV_ACTION.
+    CONCATENATE ` ` LV_ACTIONS ` ` INTO LV_ACTIONS.
+    CONCATENATE ` ` LV_ACTION ` ` INTO LV_ACTION.
+    IF LV_ACTIONS CS LV_ACTION.
+
+      RV_YES = ABAP_TRUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SET_LISTBOXES.
 
-  METHOD set_listboxes.
-    DATA lt_values TYPE vrm_values.
-    DATA lv_text TYPE string.
+    DATA LT_VALUES TYPE VRM_VALUES.
 
-    lv_text = lcl_text=>get( 'ACT_SEND' ).
-    add_value( EXPORTING iv_key = lif_sms=>action-send iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_OTP' ).
-    add_value( EXPORTING iv_key = lif_sms=>action-otp iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_TEMPLATE' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-template
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_CANCEL' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-cancel
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_REPORT' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-report
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_STATS' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-stats
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_INBOX' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-inbox
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_HEADERS' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-headers
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_TPLLIST' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-templates
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ACT_LENGTH' ).
-    add_value( EXPORTING iv_key  = lif_sms=>action-length
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
+    DATA LV_TEXT TYPE STRING.
+
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_SEND' ).
+    ADD_VALUE( EXPORTING IV_KEY = LIF_SMS=>ACTION-SEND IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_OTP' ).
+    ADD_VALUE( EXPORTING IV_KEY = LIF_SMS=>ACTION-OTP IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_TEMPLATE' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-TEMPLATE
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_CANCEL' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-CANCEL
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_REPORT' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-REPORT
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_STATS' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-STATS
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_INBOX' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-INBOX
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_HEADERS' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-HEADERS
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_TPLLIST' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-TEMPLATES
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_LENGTH' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ACTION-LENGTH
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
     CALL FUNCTION 'VRM_SET_VALUES'
       EXPORTING
-        id     = 'P_ACT'
-        values = lt_values
+        ID     = 'P_ACT'
+        VALUES = LT_VALUES
       EXCEPTIONS
         OTHERS = 1.
-    IF sy-subrc <> 0.
-      CLEAR lt_values.
+    IF SY-SUBRC NE 0.
+
+      CLEAR LT_VALUES.
+
     ENDIF.
 
-    CLEAR lt_values.
-    lv_text = lcl_text=>get( 'ENC_AUTO' ).
-    add_value( EXPORTING iv_key  = lif_sms=>encoding-auto
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ENC_TR' ).
-    add_value( EXPORTING iv_key  = lif_sms=>encoding-turkish
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ENC_UNICODE' ).
-    add_value( EXPORTING iv_key  = lif_sms=>encoding-unicode
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'ENC_ASCII' ).
-    add_value( EXPORTING iv_key  = lif_sms=>encoding-ascii
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
+    CLEAR LT_VALUES.
+    LV_TEXT = LCL_TEXT=>GET( 'ENC_AUTO' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ENCODING-AUTO
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ENC_TR' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ENCODING-TURKISH
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ENC_UNICODE' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ENCODING-UNICODE
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'ENC_ASCII' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>ENCODING-ASCII
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
     CALL FUNCTION 'VRM_SET_VALUES'
       EXPORTING
-        id     = 'P_ENC'
-        values = lt_values
+        ID     = 'P_ENC'
+        VALUES = LT_VALUES
       EXCEPTIONS
         OTHERS = 1.
-    IF sy-subrc <> 0.
-      CLEAR lt_values.
+    IF SY-SUBRC NE 0.
+
+      CLEAR LT_VALUES.
+
     ENDIF.
 
-    CLEAR lt_values.
-    lv_text = lcl_text=>get( 'IYS_0' ).
-    add_value( EXPORTING iv_key = lif_sms=>iys-info iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'IYS_11' ).
-    add_value( EXPORTING iv_key  = lif_sms=>iys-individual
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
-    lv_text = lcl_text=>get( 'IYS_12' ).
-    add_value( EXPORTING iv_key  = lif_sms=>iys-merchant
-                         iv_text = lv_text
-               CHANGING  ct_values = lt_values ).
+    CLEAR LT_VALUES.
+    LV_TEXT = LCL_TEXT=>GET( 'IYS_0' ).
+    ADD_VALUE( EXPORTING IV_KEY = LIF_SMS=>IYS-INFO IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'IYS_11' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>IYS-INDIVIDUAL
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
+    LV_TEXT = LCL_TEXT=>GET( 'IYS_12' ).
+    ADD_VALUE( EXPORTING IV_KEY  = LIF_SMS=>IYS-MERCHANT
+                         IV_TEXT = LV_TEXT
+               CHANGING  CT_VALUES = LT_VALUES ).
     CALL FUNCTION 'VRM_SET_VALUES'
       EXPORTING
-        id     = 'P_IYS'
-        values = lt_values
+        ID     = 'P_IYS'
+        VALUES = LT_VALUES
       EXCEPTIONS
         OTHERS = 1.
-    IF sy-subrc <> 0.
-      CLEAR lt_values.
+    IF SY-SUBRC NE 0.
+
+      CLEAR LT_VALUES.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ADD_VALUE.
 
-  METHOD add_value.
-    DATA ls_value TYPE vrm_value.
+    DATA LS_VALUE TYPE VRM_VALUE.
 
-    ls_value-key = iv_key.
-    ls_value-text = iv_text.
-    APPEND ls_value TO ct_values.
+    LS_VALUE-KEY = IV_KEY.
+    LS_VALUE-TEXT = IV_TEXT.
+    APPEND LS_VALUE TO CT_VALUES.
+
   ENDMETHOD.
 
+  METHOD RUN.
 
-  METHOD run.
-    CREATE OBJECT go_sms
+    CREATE OBJECT GO_SMS
       EXPORTING
-        iv_destination     = p_dest
-        iv_ext_destination = p_dext.
-    CASE p_act.
-      WHEN lif_sms=>action-send OR lif_sms=>action-otp
-        OR lif_sms=>action-template.
-        run_send( ).
-      WHEN lif_sms=>action-cancel.
-        run_cancel( ).
-      WHEN lif_sms=>action-report.
-        run_report( ).
-      WHEN lif_sms=>action-stats.
-        run_stats( ).
-      WHEN lif_sms=>action-inbox.
-        run_inbox( ).
-      WHEN lif_sms=>action-headers.
-        run_headers( ).
-      WHEN lif_sms=>action-templates.
-        run_templates( ).
-      WHEN lif_sms=>action-length.
-        run_length( ).
+        IV_DESTINATION     = P_DEST
+        IV_EXT_DESTINATION = P_DEXT.
+    CASE P_ACT.
+
+      WHEN LIF_SMS=>ACTION-SEND OR LIF_SMS=>ACTION-OTP
+        OR LIF_SMS=>ACTION-TEMPLATE.
+
+        RUN_SEND( ).
+
+      WHEN LIF_SMS=>ACTION-CANCEL.
+
+        RUN_CANCEL( ).
+
+      WHEN LIF_SMS=>ACTION-REPORT.
+
+        RUN_REPORT( ).
+
+      WHEN LIF_SMS=>ACTION-STATS.
+
+        RUN_STATS( ).
+
+      WHEN LIF_SMS=>ACTION-INBOX.
+
+        RUN_INBOX( ).
+
+      WHEN LIF_SMS=>ACTION-HEADERS.
+
+        RUN_HEADERS( ).
+
+      WHEN LIF_SMS=>ACTION-TEMPLATES.
+
+        RUN_TEMPLATES( ).
+
+      WHEN LIF_SMS=>ACTION-LENGTH.
+
+        RUN_LENGTH( ).
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD PARAMS_OF.
 
-  METHOD params_of.
-    DATA lv_line TYPE string.
-    DATA ls_param TYPE lif_sms=>ty_param.
-    DATA lv_off TYPE i.
-    DATA lv_rest TYPE i.
+    DATA LS_PARAM TYPE LIF_SMS=>TY_PARAM.
 
-    LOOP AT it_lines INTO lv_line.
-      IF lv_line IS INITIAL.
+    DATA: LV_LINE TYPE STRING,
+          LV_OFF  TYPE I,
+          LV_REST TYPE I.
+
+    LOOP AT IT_LINES INTO LV_LINE.
+
+      IF LV_LINE IS INITIAL.
+
         CONTINUE.
+
       ENDIF.
-      CLEAR ls_param.
-      FIND '=' IN lv_line MATCH OFFSET lv_off.
-      IF sy-subrc <> 0 OR lv_off = 0.
+      CLEAR LS_PARAM.
+      FIND '=' IN LV_LINE MATCH OFFSET LV_OFF.
+      IF SY-SUBRC NE 0 OR LV_OFF EQ 0.
+
         " No name: send_template rejects it with the line
-        ls_param-value = lv_line.
+        LS_PARAM-VALUE = LV_LINE.
+
       ELSE.
-        ls_param-name = lv_line(lv_off).
-        CONDENSE ls_param-name.
-        lv_off = lv_off + 1.
-        lv_rest = strlen( lv_line ) - lv_off.
-        IF lv_rest > 0.
-          ls_param-value = lv_line+lv_off(lv_rest).
+
+        LS_PARAM-NAME = LV_LINE(LV_OFF).
+        CONDENSE LS_PARAM-NAME.
+        LV_OFF = LV_OFF + 1.
+        LV_REST = STRLEN( LV_LINE ) - LV_OFF.
+        IF LV_REST GT 0.
+
+          LS_PARAM-VALUE = LV_LINE+LV_OFF(LV_REST).
+
         ENDIF.
+
       ENDIF.
-      APPEND ls_param TO rt_params.
+      APPEND LS_PARAM TO RT_PARAMS.
+
+      CLEAR LV_LINE.
+
     ENDLOOP.
+
+    CLEAR LV_LINE.
+
   ENDMETHOD.
 
+  METHOD SEND_FROM_SCREEN.
 
-  METHOD send_from_screen.
-    DATA ls_schedule TYPE lif_sms=>ty_schedule.
-    DATA lt_lines TYPE string_table.
-    DATA lt_params TYPE lif_sms=>ty_params.
-    DATA lv_line TYPE string.
-    DATA lv_ascii TYPE abap_bool.
-    DATA lv_template TYPE i.
-    DATA ls_param LIKE LINE OF s_tpar.
-    DATA lt_numbers TYPE string_table.
-    DATA lv_text TYPE string.
+    DATA: LT_LINES   TYPE STRING_TABLE,
+          LT_PARAMS  TYPE LIF_SMS=>TY_PARAMS,
+          LT_NUMBERS TYPE STRING_TABLE.
 
-    lt_numbers = screen_numbers( ).
-    lv_text = screen_text( ).
-    ls_schedule-start_date = p_sdate.
-    ls_schedule-start_time = p_stime.
-    ls_schedule-stop_date = p_edate.
-    ls_schedule-stop_time = p_etime.
+    DATA: LS_SCHEDULE TYPE LIF_SMS=>TY_SCHEDULE,
+          LS_PARAM    LIKE LINE OF S_TPAR.
 
-    CASE p_act.
-      WHEN lif_sms=>action-otp.
-        IF p_enc = lif_sms=>encoding-ascii.
-          lv_ascii = abap_true.
+    DATA: LV_LINE     TYPE STRING,
+          LV_ASCII    TYPE ABAP_BOOL,
+          LV_TEMPLATE TYPE I,
+          LV_TEXT     TYPE STRING.
+
+    LT_NUMBERS = SCREEN_NUMBERS( ).
+    LV_TEXT = SCREEN_TEXT( ).
+    LS_SCHEDULE-START_DATE = P_SDATE.
+    LS_SCHEDULE-START_TIME = P_STIME.
+    LS_SCHEDULE-STOP_DATE = P_EDATE.
+    LS_SCHEDULE-STOP_TIME = P_ETIME.
+
+    CASE P_ACT.
+
+      WHEN LIF_SMS=>ACTION-OTP.
+
+        IF P_ENC EQ LIF_SMS=>ENCODING-ASCII.
+
+          LV_ASCII = ABAP_TRUE.
+
         ENDIF.
-        rs_result = go_sms->send_otp( it_numbers = lt_numbers
-                                      iv_text    = lv_text
-                                      iv_header  = p_head
-                                      iv_ascii   = lv_ascii
-                                      iv_dry_run = iv_dry_run ).
-      WHEN lif_sms=>action-template.
-        LOOP AT s_tpar[] INTO ls_param WHERE sign = 'I'.
-          lv_line = ls_param-low.
-          APPEND lv_line TO lt_lines.
+        RS_RESULT = GO_SMS->SEND_OTP( IT_NUMBERS = LT_NUMBERS
+                                      IV_TEXT    = LV_TEXT
+                                      IV_HEADER  = P_HEAD
+                                      IV_ASCII   = LV_ASCII
+                                      IV_DRY_RUN = IV_DRY_RUN ).
+
+      WHEN LIF_SMS=>ACTION-TEMPLATE.
+
+        LOOP AT S_TPAR[] INTO LS_PARAM
+             WHERE SIGN EQ 'I'.
+
+          LV_LINE = LS_PARAM-LOW.
+          APPEND LV_LINE TO LT_LINES.
+
+          CLEAR LS_PARAM.
+
         ENDLOOP.
-        lt_params = params_of( lt_lines ).
-        lv_template = p_tid.
-        rs_result = go_sms->send_template(
-                      it_numbers     = lt_numbers
-                      iv_template_id = lv_template
-                      it_params      = lt_params
-                      iv_header      = p_head
-                      iv_encoding    = p_enc
-                      iv_iys         = p_iys
-                      is_schedule    = ls_schedule
-                      iv_reference   = p_ref
-                      iv_dry_run     = iv_dry_run ).
+
+        CLEAR LS_PARAM.
+        LT_PARAMS = PARAMS_OF( LT_LINES ).
+        LV_TEMPLATE = P_TID.
+        RS_RESULT = GO_SMS->SEND_TEMPLATE(
+                      IT_NUMBERS     = LT_NUMBERS
+                      IV_TEMPLATE_ID = LV_TEMPLATE
+                      IT_PARAMS      = LT_PARAMS
+                      IV_HEADER      = P_HEAD
+                      IV_ENCODING    = P_ENC
+                      IV_IYS         = P_IYS
+                      IS_SCHEDULE    = LS_SCHEDULE
+                      IV_REFERENCE   = P_REF
+                      IV_DRY_RUN     = IV_DRY_RUN ).
+
       WHEN OTHERS.
-        rs_result = go_sms->send( it_numbers   = lt_numbers
-                                  iv_text      = lv_text
-                                  iv_header    = p_head
-                                  iv_encoding  = p_enc
-                                  iv_iys       = p_iys
-                                  is_schedule  = ls_schedule
-                                  iv_reference = p_ref
-                                  iv_dry_run   = iv_dry_run ).
+
+        RS_RESULT = GO_SMS->SEND( IT_NUMBERS   = LT_NUMBERS
+                                  IV_TEXT      = LV_TEXT
+                                  IV_HEADER    = P_HEAD
+                                  IV_ENCODING  = P_ENC
+                                  IV_IYS       = P_IYS
+                                  IS_SCHEDULE  = LS_SCHEDULE
+                                  IV_REFERENCE = P_REF
+                                  IV_DRY_RUN   = IV_DRY_RUN ).
+
     ENDCASE.
+
   ENDMETHOD.
 
+  METHOD RUN_SEND.
 
-  METHOD run_send.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA ls_length TYPE lif_sms=>ty_length.
-    DATA lv_text TYPE string.
-    DATA lv_title TYPE string.
-    DATA lv_valid TYPE string.
-    DATA lv_credits TYPE string.
-    DATA lv_saved TYPE abap_bool.
-    DATA lv_sms_text TYPE string.
+    DATA: LS_RESULT TYPE LIF_SMS=>TY_RESULT,
+          LS_LENGTH TYPE LIF_SMS=>TY_LENGTH.
+
+    DATA: LV_TEXT     TYPE STRING,
+          LV_TITLE    TYPE STRING,
+          LV_VALID    TYPE STRING,
+          LV_CREDITS  TYPE STRING,
+          LV_SAVED    TYPE ABAP_BOOL,
+          LV_SMS_TEXT TYPE STRING.
 
     " Always check first; a real send only follows a clean preview
-    ls_result = send_from_screen( abap_true ).
-    IF ls_result-code <> lif_sms=>code-dry_run OR p_dry = abap_true.
-      show_result( ls_result ).
-      IF p_nlen = abap_true AND p_act = lif_sms=>action-send
-         AND ls_result-code = lif_sms=>code-dry_run.
-        lv_sms_text = screen_text( ).
-        ls_length = go_sms->length( iv_text     = lv_sms_text
-                                    iv_encoding = p_enc
-                                    iv_header   = p_head ).
-        show_length( ls_length ).
+    LS_RESULT = SEND_FROM_SCREEN( ABAP_TRUE ).
+    IF LS_RESULT-CODE NE LIF_SMS=>CODE-DRY_RUN OR P_DRY EQ ABAP_TRUE.
+
+      SHOW_RESULT( LS_RESULT ).
+      IF P_NLEN EQ ABAP_TRUE AND P_ACT EQ LIF_SMS=>ACTION-SEND
+         AND LS_RESULT-CODE EQ LIF_SMS=>CODE-DRY_RUN.
+
+        LV_SMS_TEXT = SCREEN_TEXT( ).
+        LS_LENGTH = GO_SMS->LENGTH( IV_TEXT     = LV_SMS_TEXT
+                                    IV_ENCODING = P_ENC
+                                    IV_HEADER   = P_HEAD ).
+        SHOW_LENGTH( LS_LENGTH ).
+
       ENDIF.
-      IF ls_result-code = lif_sms=>code-dry_run.
-        finish( iv_ok = abap_true iv_text = ls_result-message ).
+      IF LS_RESULT-CODE EQ LIF_SMS=>CODE-DRY_RUN.
+
+        FINISH( IV_OK = ABAP_TRUE IV_TEXT = LS_RESULT-MESSAGE ).
+
       ELSE.
-        finish( iv_ok = abap_false iv_text = ls_result-message ).
+
+        FINISH( IV_OK = ABAP_FALSE IV_TEXT = LS_RESULT-MESSAGE ).
+
       ENDIF.
       RETURN.
+
     ENDIF.
 
-    IF sy-batch = abap_false.
-      lv_valid = ls_result-valid.
-      CONDENSE lv_valid.
-      lv_credits = credits( ls_result ).
-      lv_title = lcl_text=>get( 'POP_TITLE' ).
-      lv_text = lcl_text=>get( iv_key = 'POP_QUESTION'
-                               iv_1   = lv_valid
-                               iv_2   = lv_credits ).
-      IF confirm( iv_title = lv_title iv_question = lv_text )
-         = abap_false.
-        show_result( ls_result ).
-        lv_text = lcl_text=>get( 'CANCELLED' ).
-        finish( iv_ok = abap_true iv_text = lv_text ).
+    IF SY-BATCH EQ ABAP_FALSE.
+
+      LV_VALID = LS_RESULT-VALID.
+      CONDENSE LV_VALID.
+      LV_CREDITS = CREDITS( LS_RESULT ).
+      LV_TITLE = LCL_TEXT=>GET( 'POP_TITLE' ).
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'POP_QUESTION'
+                               IV_1   = LV_VALID
+                               IV_2   = LV_CREDITS ).
+      IF CONFIRM( IV_TITLE = LV_TITLE IV_QUESTION = LV_TEXT )
+         EQ ABAP_FALSE.
+
+        SHOW_RESULT( LS_RESULT ).
+        LV_TEXT = LCL_TEXT=>GET( 'CANCELLED' ).
+        FINISH( IV_OK = ABAP_TRUE IV_TEXT = LV_TEXT ).
         RETURN.
+
       ENDIF.
+
     ENDIF.
 
-    ls_result = send_from_screen( abap_false ).
-    lv_saved = lcl_sms_log=>write( is_result    = ls_result
-                                   iv_with_text = p_logtx ).
-    show_result( ls_result ).
-    show_log_state( lv_saved ).
-    CONCATENATE ls_result-code `: ` ls_result-message INTO lv_text.
-    IF ls_result-jobid IS NOT INITIAL.
-      CONCATENATE lv_text ` (jobid ` ls_result-jobid `)` INTO lv_text.
+    LS_RESULT = SEND_FROM_SCREEN( ABAP_FALSE ).
+    LV_SAVED = LCL_SMS_LOG=>WRITE( IS_RESULT    = LS_RESULT
+                                   IV_WITH_TEXT = P_LOGTX ).
+    SHOW_RESULT( LS_RESULT ).
+    SHOW_LOG_STATE( LV_SAVED ).
+    CONCATENATE LS_RESULT-CODE `: ` LS_RESULT-MESSAGE INTO LV_TEXT.
+    IF LS_RESULT-JOBID IS NOT INITIAL.
+
+      CONCATENATE LV_TEXT ` (jobid ` LS_RESULT-JOBID `)` INTO LV_TEXT.
+
     ENDIF.
-    finish( iv_ok = ls_result-sent iv_text = lv_text ).
+    FINISH( IV_OK = LS_RESULT-SENT IV_TEXT = LV_TEXT ).
+
   ENDMETHOD.
 
+  METHOD RUN_CANCEL.
 
-  METHOD run_cancel.
-    DATA lt_jobids TYPE string_table.
-    DATA lv_jobid TYPE string.
-    DATA ls_answer TYPE lif_sms=>ty_answer.
-    DATA lv_title TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_ok TYPE abap_bool.
-    DATA lv_saved TYPE abap_bool.
+    DATA LT_JOBIDS TYPE STRING_TABLE.
 
-    lt_jobids = screen_jobids( ).
-    READ TABLE lt_jobids INTO lv_jobid INDEX 1.
-    IF sy-batch = abap_false AND lv_jobid IS NOT INITIAL.
-      lv_title = lcl_text=>get( 'POP_CANCEL_T' ).
-      lv_text = lcl_text=>get( iv_key = 'POP_CANCEL_Q'
-                               iv_1   = lv_jobid ).
-      IF confirm( iv_title = lv_title iv_question = lv_text )
-         = abap_false.
-        lv_text = lcl_text=>get( 'NOTHING_DONE' ).
-        finish( iv_ok = abap_true iv_text = lv_text ).
+    DATA LS_ANSWER TYPE LIF_SMS=>TY_ANSWER.
+
+    DATA: LV_JOBID TYPE STRING,
+          LV_TITLE TYPE STRING,
+          LV_TEXT  TYPE STRING,
+          LV_OK    TYPE ABAP_BOOL,
+          LV_SAVED TYPE ABAP_BOOL.
+
+    LT_JOBIDS = SCREEN_JOBIDS( ).
+    CLEAR LV_JOBID.
+    READ TABLE LT_JOBIDS
+         INTO LV_JOBID
+         INDEX 1.
+    IF SY-BATCH EQ ABAP_FALSE AND LV_JOBID IS NOT INITIAL.
+
+      LV_TITLE = LCL_TEXT=>GET( 'POP_CANCEL_T' ).
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'POP_CANCEL_Q'
+                               IV_1   = LV_JOBID ).
+      IF CONFIRM( IV_TITLE = LV_TITLE IV_QUESTION = LV_TEXT )
+         EQ ABAP_FALSE.
+
+        LV_TEXT = LCL_TEXT=>GET( 'NOTHING_DONE' ).
+        FINISH( IV_OK = ABAP_TRUE IV_TEXT = LV_TEXT ).
         RETURN.
+
       ENDIF.
+
     ENDIF.
 
-    ls_answer = go_sms->cancel( lv_jobid ).
-    lv_saved = lcl_sms_log=>write_simple(
-                 iv_action  = lif_sms=>action-cancel
-                 iv_code    = ls_answer-code
-                 iv_message = ls_answer-message
-                 iv_jobid   = ls_answer-jobid ).
-    heading( 'ACT_CANCEL' ).
-    write_code( iv_code    = ls_answer-code
-                iv_message = ls_answer-message ).
-    IF ls_answer-jobid IS NOT INITIAL.
-      lv_text = lcl_text=>get( 'L_JOBID' ).
-      CONCATENATE lv_text `: ` ls_answer-jobid INTO lv_text.
-      write_long( lv_text ).
+    LS_ANSWER = GO_SMS->CANCEL( LV_JOBID ).
+    LV_SAVED = LCL_SMS_LOG=>WRITE_SIMPLE(
+                 IV_ACTION  = LIF_SMS=>ACTION-CANCEL
+                 IV_CODE    = LS_ANSWER-CODE
+                 IV_MESSAGE = LS_ANSWER-MESSAGE
+                 IV_JOBID   = LS_ANSWER-JOBID ).
+    HEADING( 'ACT_CANCEL' ).
+    WRITE_CODE( IV_CODE    = LS_ANSWER-CODE
+                IV_MESSAGE = LS_ANSWER-MESSAGE ).
+    IF LS_ANSWER-JOBID IS NOT INITIAL.
+
+      LV_TEXT = LCL_TEXT=>GET( 'L_JOBID' ).
+      CONCATENATE LV_TEXT `: ` LS_ANSWER-JOBID INTO LV_TEXT.
+      WRITE_LONG( LV_TEXT ).
+
     ENDIF.
-    show_log_state( lv_saved ).
-    IF ls_answer-code = lif_sms=>code-ok.
-      lv_ok = abap_true.
+    SHOW_LOG_STATE( LV_SAVED ).
+    IF LS_ANSWER-CODE EQ LIF_SMS=>CODE-OK.
+
+      LV_OK = ABAP_TRUE.
+
     ENDIF.
-    finish( iv_ok = lv_ok iv_text = ls_answer-message ).
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_ANSWER-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_REPORT.
 
-  METHOD run_report.
-    DATA ls_report TYPE lif_sms=>ty_report.
-    DATA ls_line TYPE lif_sms=>ty_report_line.
-    DATA lv_ok TYPE abap_bool.
-    DATA lv_text TYPE string.
-    DATA lv_job TYPE c LENGTH 27.
-    DATA lv_num TYPE c LENGTH 15.
-    DATA lt_jobids TYPE string_table.
+    DATA LT_JOBIDS TYPE STRING_TABLE.
 
-    lt_jobids = screen_jobids( ).
-    ls_report = go_sms->report( it_jobids = lt_jobids
-                                iv_from   = p_rfrom
-                                iv_to     = p_rto ).
-    heading( 'L_REPORT' ).
-    write_code( iv_code    = ls_report-code
-                iv_message = ls_report-message ).
-    IF ls_report-lines IS NOT INITIAL.
+    DATA: LS_REPORT TYPE LIF_SMS=>TY_REPORT,
+          LS_LINE   TYPE LIF_SMS=>TY_REPORT_LINE.
+
+    DATA: LV_OK   TYPE ABAP_BOOL,
+          LV_TEXT TYPE STRING,
+          LV_JOB  TYPE C LENGTH 27,
+          LV_NUM  TYPE C LENGTH 15.
+
+    LT_JOBIDS = SCREEN_JOBIDS( ).
+    LS_REPORT = GO_SMS->REPORT( IT_JOBIDS = LT_JOBIDS
+                                IV_FROM   = P_RFROM
+                                IV_TO     = P_RTO ).
+    HEADING( 'L_REPORT' ).
+    WRITE_CODE( IV_CODE    = LS_REPORT-CODE
+                IV_MESSAGE = LS_REPORT-MESSAGE ).
+    IF LS_REPORT-LINES IS NOT INITIAL.
+
       SKIP.
-      lv_text = lcl_text=>get( 'L_REPORT_COLS' ).
-      WRITE: / lv_text COLOR COL_HEADING.
+      LV_TEXT = LCL_TEXT=>GET( 'L_REPORT_COLS' ).
+      WRITE: / LV_TEXT COLOR COL_HEADING.
+
     ENDIF.
-    LOOP AT ls_report-lines INTO ls_line.
-      lv_text = ls_line-status_text.
-      IF ls_line-error_text IS NOT INITIAL.
-        CONCATENATE lv_text ` / ` ls_line-error_text INTO lv_text.
+    LOOP AT LS_REPORT-LINES INTO LS_LINE.
+
+      LV_TEXT = LS_LINE-STATUS_TEXT.
+      IF LS_LINE-ERROR_TEXT IS NOT INITIAL.
+
+        CONCATENATE LV_TEXT ` / ` LS_LINE-ERROR_TEXT INTO LV_TEXT.
+
       ENDIF.
-      lv_job = ls_line-jobid.
-      lv_num = ls_line-number.
-      WRITE: / lv_job, lv_num, lv_text, ls_line-operator,
-               ls_line-delivered, ls_line-reference.
+      LV_JOB = LS_LINE-JOBID.
+      LV_NUM = LS_LINE-NUMBER.
+      WRITE: / LV_JOB, LV_NUM, LV_TEXT, LS_LINE-OPERATOR,
+               LS_LINE-DELIVERED, LS_LINE-REFERENCE.
+
+      CLEAR LS_LINE.
+
     ENDLOOP.
 
-    IF ls_report-code = `00` OR ls_report-code = `60`.
-      lv_ok = abap_true.
+    CLEAR LS_LINE.
+
+    IF LS_REPORT-CODE EQ `00` OR LS_REPORT-CODE EQ `60`.
+
+      LV_OK = ABAP_TRUE.
+
     ENDIF.
-    finish( iv_ok = lv_ok iv_text = ls_report-message ).
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_REPORT-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_STATS.
 
-  METHOD run_stats.
-    DATA lt_jobids TYPE string_table.
-    DATA lv_jobid TYPE string.
-    DATA ls_stats TYPE lif_sms=>ty_stats.
-    DATA ls_line TYPE lif_sms=>ty_stats_line.
-    DATA lv_text TYPE string.
-    DATA lv_abroad TYPE string.
-    DATA lv_ok TYPE abap_bool.
+    DATA LT_JOBIDS TYPE STRING_TABLE.
 
-    lt_jobids = screen_jobids( ).
-    READ TABLE lt_jobids INTO lv_jobid INDEX 1.
-    ls_stats = go_sms->stats( iv_jobid     = lv_jobid
-                              iv_send_date = p_sendd ).
-    heading( 'L_STATS' ).
-    write_code( iv_code    = ls_stats-code
-                iv_message = ls_stats-message ).
-    LOOP AT ls_stats-lines INTO ls_line.
-      lv_text = lcl_text=>get( iv_key = 'L_STATS_LINE'
-                               iv_1   = ls_line-total_sms
-                               iv_2   = ls_line-total_parts
-                               iv_3   = ls_line-charge ).
-      CONCATENATE ls_line-status_text `: ` lv_text ` (`
-                  ls_line-statement `)` INTO lv_text.
-      IF ls_line-domestic = `false`.
-        lv_abroad = lcl_text=>get( 'OP_ABROAD' ).
-        CONCATENATE lv_text ` ` lv_abroad INTO lv_text.
+    DATA: LS_STATS TYPE LIF_SMS=>TY_STATS,
+          LS_LINE  TYPE LIF_SMS=>TY_STATS_LINE.
+
+    DATA: LV_JOBID  TYPE STRING,
+          LV_TEXT   TYPE STRING,
+          LV_ABROAD TYPE STRING,
+          LV_OK     TYPE ABAP_BOOL.
+
+    LT_JOBIDS = SCREEN_JOBIDS( ).
+    CLEAR LV_JOBID.
+    READ TABLE LT_JOBIDS
+         INTO LV_JOBID
+         INDEX 1.
+    LS_STATS = GO_SMS->STATS( IV_JOBID     = LV_JOBID
+                              IV_SEND_DATE = P_SENDD ).
+    HEADING( 'L_STATS' ).
+    WRITE_CODE( IV_CODE    = LS_STATS-CODE
+                IV_MESSAGE = LS_STATS-MESSAGE ).
+    LOOP AT LS_STATS-LINES INTO LS_LINE.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_STATS_LINE'
+                               IV_1   = LS_LINE-TOTAL_SMS
+                               IV_2   = LS_LINE-TOTAL_PARTS
+                               IV_3   = LS_LINE-CHARGE ).
+      CONCATENATE LS_LINE-STATUS_TEXT `: ` LV_TEXT ` (`
+                  LS_LINE-STATEMENT `)`
+        INTO LV_TEXT.
+      IF LS_LINE-DOMESTIC EQ `false`.
+
+        LV_ABROAD = LCL_TEXT=>GET( 'OP_ABROAD' ).
+        CONCATENATE LV_TEXT ` ` LV_ABROAD INTO LV_TEXT.
+
       ENDIF.
-      write_long( lv_text ).
+      WRITE_LONG( LV_TEXT ).
+
+      CLEAR LS_LINE.
+
     ENDLOOP.
-    IF ls_stats-code = `00`.
-      lv_ok = abap_true.
+
+    CLEAR LS_LINE.
+    IF LS_STATS-CODE EQ `00`.
+
+      LV_OK = ABAP_TRUE.
+
     ENDIF.
-    finish( iv_ok = lv_ok iv_text = ls_stats-message ).
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_STATS-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_INBOX.
 
-  METHOD run_inbox.
-    DATA ls_inbox TYPE lif_sms=>ty_inbox.
-    DATA ls_line TYPE lif_sms=>ty_inbox_line.
-    DATA lv_text TYPE string.
-    DATA lv_ok TYPE abap_bool.
+    DATA: LS_INBOX TYPE LIF_SMS=>TY_INBOX,
+          LS_LINE  TYPE LIF_SMS=>TY_INBOX_LINE.
 
-    ls_inbox = go_sms->inbox( iv_from         = p_rfrom
-                              iv_to           = p_rto
-                              iv_full_numbers = p_full ).
-    heading( 'L_INBOX' ).
-    write_code( iv_code    = ls_inbox-code
-                iv_message = ls_inbox-message ).
-    LOOP AT ls_inbox-lines INTO ls_line.
+    DATA: LV_TEXT TYPE STRING,
+          LV_OK   TYPE ABAP_BOOL.
+
+    LS_INBOX = GO_SMS->INBOX( IV_FROM         = P_RFROM
+                              IV_TO           = P_RTO
+                              IV_FULL_NUMBERS = P_FULL ).
+    HEADING( 'L_INBOX' ).
+    WRITE_CODE( IV_CODE    = LS_INBOX-CODE
+                IV_MESSAGE = LS_INBOX-MESSAGE ).
+    LOOP AT LS_INBOX-LINES INTO LS_LINE.
+
       SKIP.
-      CONCATENATE ls_line-received ls_line-sender ls_line-operator
-                  INTO lv_text SEPARATED BY `   `.
-      WRITE: / lv_text COLOR COL_KEY.
-      write_long( iv_text = ls_line-text iv_indent = 5 ).
+      CONCATENATE LS_LINE-RECEIVED LS_LINE-SENDER LS_LINE-OPERATOR
+        INTO LV_TEXT
+        SEPARATED BY `   `.
+      WRITE: / LV_TEXT COLOR COL_KEY.
+      WRITE_LONG( IV_TEXT = LS_LINE-TEXT IV_INDENT = 5 ).
+
+      CLEAR LS_LINE.
+
     ENDLOOP.
-    IF ls_inbox-code = `00` OR ls_inbox-code = `40`.
-      lv_ok = abap_true.
+
+    CLEAR LS_LINE.
+    IF LS_INBOX-CODE EQ `00` OR LS_INBOX-CODE EQ `40`.
+
+      LV_OK = ABAP_TRUE.
+
     ENDIF.
-    finish( iv_ok = lv_ok iv_text = ls_inbox-message ).
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_INBOX-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_HEADERS.
 
-  METHOD run_headers.
-    DATA ls_headers TYPE lif_sms=>ty_headers.
-    DATA lv_name TYPE string.
-    DATA lv_text TYPE string.
-    DATA lv_ok TYPE abap_bool.
+    DATA LS_HEADERS TYPE LIF_SMS=>TY_HEADERS.
 
-    ls_headers = go_sms->headers( ).
-    heading( 'L_HEADERS' ).
-    write_code( iv_code    = ls_headers-code
-                iv_message = ls_headers-message ).
-    IF ls_headers-code = `00`.
-      lv_ok = abap_true.
-      lv_text = lcl_text=>get( 'L_CONN_OK' ).
-      WRITE: / lv_text COLOR COL_POSITIVE.
+    DATA: LV_NAME TYPE STRING,
+          LV_TEXT TYPE STRING,
+          LV_OK   TYPE ABAP_BOOL.
+
+    LS_HEADERS = GO_SMS->HEADERS( ).
+    HEADING( 'L_HEADERS' ).
+    WRITE_CODE( IV_CODE    = LS_HEADERS-CODE
+                IV_MESSAGE = LS_HEADERS-MESSAGE ).
+    IF LS_HEADERS-CODE EQ `00`.
+
+      LV_OK = ABAP_TRUE.
+      LV_TEXT = LCL_TEXT=>GET( 'L_CONN_OK' ).
+      WRITE: / LV_TEXT COLOR COL_POSITIVE.
+
     ENDIF.
     SKIP.
-    LOOP AT ls_headers-names INTO lv_name.
-      WRITE: /3 lv_name.
+    LOOP AT LS_HEADERS-NAMES INTO LV_NAME.
+
+      WRITE: /3 LV_NAME.
+
+      CLEAR LV_NAME.
+
     ENDLOOP.
-    finish( iv_ok = lv_ok iv_text = ls_headers-message ).
+
+    CLEAR LV_NAME.
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_HEADERS-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_TEMPLATES.
 
-  METHOD run_templates.
-    DATA ls_templates TYPE lif_sms=>ty_templates.
-    DATA ls_line TYPE lif_sms=>ty_template.
-    DATA lv_page TYPE i.
-    DATA lv_text TYPE string.
-    DATA lv_ok TYPE abap_bool.
+    DATA: LS_TEMPLATES TYPE LIF_SMS=>TY_TEMPLATES,
+          LS_LINE      TYPE LIF_SMS=>TY_TEMPLATE.
 
-    lv_page = p_tpage.
-    ls_templates = go_sms->templates( iv_page    = lv_page
-                                      iv_public  = p_tpub
-                                      iv_search  = p_tsrch
-                                      iv_type    = p_ttype
-                                      iv_content = p_tcont ).
-    heading( 'L_TEMPLATES' ).
-    write_code( iv_code    = ls_templates-code
-                iv_message = ls_templates-message ).
-    IF ls_templates-code = `00`.
-      lv_ok = abap_true.
-      lv_text = lcl_text=>get( iv_key = 'L_PAGE'
-                               iv_1   = ls_templates-page
-                               iv_2   = ls_templates-pages
-                               iv_3   = ls_templates-total ).
-      write_long( lv_text ).
+    DATA: LV_PAGE TYPE I,
+          LV_TEXT TYPE STRING,
+          LV_OK   TYPE ABAP_BOOL.
+
+    LV_PAGE = P_TPAGE.
+    LS_TEMPLATES = GO_SMS->TEMPLATES( IV_PAGE    = LV_PAGE
+                                      IV_PUBLIC  = P_TPUB
+                                      IV_SEARCH  = P_TSRCH
+                                      IV_TYPE    = P_TTYPE
+                                      IV_CONTENT = P_TCONT ).
+    HEADING( 'L_TEMPLATES' ).
+    WRITE_CODE( IV_CODE    = LS_TEMPLATES-CODE
+                IV_MESSAGE = LS_TEMPLATES-MESSAGE ).
+    IF LS_TEMPLATES-CODE EQ `00`.
+
+      LV_OK = ABAP_TRUE.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_PAGE'
+                               IV_1   = LS_TEMPLATES-PAGE
+                               IV_2   = LS_TEMPLATES-PAGES
+                               IV_3   = LS_TEMPLATES-TOTAL ).
+      WRITE_LONG( LV_TEXT ).
+
     ENDIF.
-    LOOP AT ls_templates-lines INTO ls_line.
+    LOOP AT LS_TEMPLATES-LINES INTO LS_LINE.
+
       SKIP.
-      CONCATENATE ls_line-id ls_line-type ls_line-description
-                  INTO lv_text SEPARATED BY `   `.
-      WRITE: / lv_text COLOR COL_KEY.
-      write_long( iv_text = ls_line-content iv_indent = 5 ).
-      IF ls_line-parameters IS NOT INITIAL.
-        lv_text = lcl_text=>get( iv_key = 'L_PARAMS'
-                                 iv_1   = ls_line-parameters ).
-        write_long( iv_text = lv_text iv_indent = 5 ).
+      CONCATENATE LS_LINE-ID LS_LINE-TYPE LS_LINE-DESCRIPTION
+        INTO LV_TEXT
+        SEPARATED BY `   `.
+      WRITE: / LV_TEXT COLOR COL_KEY.
+      WRITE_LONG( IV_TEXT = LS_LINE-CONTENT IV_INDENT = 5 ).
+      IF LS_LINE-PARAMETERS IS NOT INITIAL.
+
+        LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_PARAMS'
+                                 IV_1   = LS_LINE-PARAMETERS ).
+        WRITE_LONG( IV_TEXT = LV_TEXT IV_INDENT = 5 ).
+
       ENDIF.
+
+      CLEAR LS_LINE.
+
     ENDLOOP.
-    finish( iv_ok = lv_ok iv_text = ls_templates-message ).
+
+    CLEAR LS_LINE.
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_TEMPLATES-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD RUN_LENGTH.
 
-  METHOD run_length.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA ls_length TYPE lif_sms=>ty_length.
-    DATA lv_1 TYPE c LENGTH 11.
-    DATA lv_2 TYPE c LENGTH 11.
-    DATA lv_3 TYPE c LENGTH 11.
-    DATA lv_text TYPE string.
-    DATA lv_ok TYPE abap_bool.
-    DATA lv_sms_text TYPE string.
+    DATA: LS_INFO   TYPE LIF_SMS=>TY_TEXT_INFO,
+          LS_LENGTH TYPE LIF_SMS=>TY_LENGTH.
 
-    lv_sms_text = screen_text( ).
-    ls_info = lcl_sms_text=>analyze( iv_text     = lv_sms_text
-                                     iv_encoding = p_enc
-                                     iv_header   = p_head ).
-    heading( 'ACT_LENGTH' ).
-    IF ls_info-encoding IS NOT INITIAL.
-      lv_1 = ls_info-units.
-      lv_2 = ls_info-max_units.
-      lv_3 = ls_info-parts.
-      CONDENSE: lv_1, lv_2, lv_3.
-      lv_text = lcl_text=>get( iv_key = 'L_LOCAL'
-                               iv_1   = ls_info-encoding
-                               iv_2   = lv_1
-                               iv_3   = lv_3 ).
-      write_long( lv_text ).
+    DATA: LV_1        TYPE C LENGTH 11,
+          LV_2        TYPE C LENGTH 11,
+          LV_3        TYPE C LENGTH 11,
+          LV_TEXT     TYPE STRING,
+          LV_OK       TYPE ABAP_BOOL,
+          LV_SMS_TEXT TYPE STRING.
+
+    LV_SMS_TEXT = SCREEN_TEXT( ).
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE( IV_TEXT     = LV_SMS_TEXT
+                                     IV_ENCODING = P_ENC
+                                     IV_HEADER   = P_HEAD ).
+    HEADING( 'ACT_LENGTH' ).
+    IF LS_INFO-ENCODING IS NOT INITIAL.
+
+      LV_1 = LS_INFO-UNITS.
+      LV_2 = LS_INFO-MAX_UNITS.
+      LV_3 = LS_INFO-PARTS.
+      CONDENSE: LV_1, LV_2, LV_3.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_LOCAL'
+                               IV_1   = LS_INFO-ENCODING
+                               IV_2   = LV_1
+                               IV_3   = LV_3 ).
+      WRITE_LONG( LV_TEXT ).
+
     ENDIF.
-    ls_length = go_sms->length( iv_text     = lv_sms_text
-                                iv_encoding = p_enc
-                                iv_header   = p_head ).
-    show_length( ls_length ).
-    IF ls_length-code = `00`.
-      lv_ok = abap_true.
+    LS_LENGTH = GO_SMS->LENGTH( IV_TEXT     = LV_SMS_TEXT
+                                IV_ENCODING = P_ENC
+                                IV_HEADER   = P_HEAD ).
+    SHOW_LENGTH( LS_LENGTH ).
+    IF LS_LENGTH-CODE EQ `00`.
+
+      LV_OK = ABAP_TRUE.
+
     ENDIF.
-    finish( iv_ok = lv_ok iv_text = ls_length-message ).
+    FINISH( IV_OK = LV_OK IV_TEXT = LS_LENGTH-MESSAGE ).
+
   ENDMETHOD.
 
+  METHOD SCREEN_TEXT.
 
-  METHOD screen_text.
-    DATA lv_line TYPE string.
-    DATA lt_lines TYPE string_table.
+    DATA LT_LINES TYPE STRING_TABLE.
 
-    lv_line = p_txt1.
-    APPEND lv_line TO lt_lines.
-    lv_line = p_txt2.
-    APPEND lv_line TO lt_lines.
-    lv_line = p_txt3.
-    APPEND lv_line TO lt_lines.
-    lv_line = p_txt4.
-    APPEND lv_line TO lt_lines.
-    LOOP AT lt_lines INTO lv_line.
-      IF lv_line IS INITIAL.
+    DATA LV_LINE TYPE STRING.
+
+    LV_LINE = P_TXT1.
+    APPEND LV_LINE TO LT_LINES.
+    LV_LINE = P_TXT2.
+    APPEND LV_LINE TO LT_LINES.
+    LV_LINE = P_TXT3.
+    APPEND LV_LINE TO LT_LINES.
+    LV_LINE = P_TXT4.
+    APPEND LV_LINE TO LT_LINES.
+    LOOP AT LT_LINES INTO LV_LINE.
+
+      IF LV_LINE IS INITIAL.
+
         CONTINUE.
+
       ENDIF.
-      IF rv_text IS INITIAL.
-        rv_text = lv_line.
+      IF RV_TEXT IS INITIAL.
+
+        RV_TEXT = LV_LINE.
+
       ELSE.
-        CONCATENATE rv_text lv_line INTO rv_text
-                    SEPARATED BY cl_abap_char_utilities=>newline.
+
+        CONCATENATE RV_TEXT LV_LINE
+          INTO RV_TEXT
+          SEPARATED BY CL_ABAP_CHAR_UTILITIES=>NEWLINE.
+
       ENDIF.
+
+      CLEAR LV_LINE.
+
     ENDLOOP.
+
+    CLEAR LV_LINE.
+
   ENDMETHOD.
 
+  METHOD SCREEN_NUMBERS.
 
-  METHOD screen_numbers.
-    DATA ls_no LIKE LINE OF s_no.
-    DATA lv_number TYPE string.
-    DATA lv_ignored TYPE i.
-    DATA lv_count TYPE c LENGTH 11.
-    DATA lv_text TYPE string.
+    DATA LS_NO LIKE LINE OF S_NO.
 
-    LOOP AT s_no[] INTO ls_no.
-      IF ls_no-sign = 'I' AND ( ls_no-option = 'EQ'
-                                OR ls_no-option IS INITIAL ).
-        lv_number = ls_no-low.
-        APPEND lv_number TO rt_numbers.
+    DATA: LV_NUMBER  TYPE STRING,
+          LV_IGNORED TYPE I,
+          LV_COUNT   TYPE C LENGTH 11,
+          LV_TEXT    TYPE STRING.
+
+    LOOP AT S_NO[] INTO LS_NO.
+
+      IF LS_NO-SIGN EQ 'I' AND ( LS_NO-OPTION EQ 'EQ'
+                                OR LS_NO-OPTION IS INITIAL ).
+
+        LV_NUMBER = LS_NO-LOW.
+        APPEND LV_NUMBER TO RT_NUMBERS.
+
       ELSE.
-        lv_ignored = lv_ignored + 1.
+
+        LV_IGNORED = LV_IGNORED + 1.
+
       ENDIF.
+
+      CLEAR LS_NO.
+
     ENDLOOP.
-    IF lv_ignored > 0.
-      lv_count = lv_ignored.
-      CONDENSE lv_count.
-      lv_text = lcl_text=>get( iv_key = 'IGNORED' iv_1 = lv_count ).
-      MESSAGE lv_text TYPE 'S' DISPLAY LIKE 'W'.
+
+    CLEAR LS_NO.
+    IF LV_IGNORED GT 0.
+
+      LV_COUNT = LV_IGNORED.
+      CONDENSE LV_COUNT.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'IGNORED' IV_1 = LV_COUNT ).
+      MESSAGE LV_TEXT TYPE 'S' DISPLAY LIKE 'W'.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SCREEN_JOBIDS.
 
-  METHOD screen_jobids.
-    DATA ls_job LIKE LINE OF s_job.
-    DATA lv_jobid TYPE string.
+    DATA LS_JOB LIKE LINE OF S_JOB.
 
-    LOOP AT s_job[] INTO ls_job WHERE sign = 'I'.
-      lv_jobid = ls_job-low.
-      APPEND lv_jobid TO rt_jobids.
+    DATA LV_JOBID TYPE STRING.
+
+    LOOP AT S_JOB[] INTO LS_JOB
+         WHERE SIGN EQ 'I'.
+
+      LV_JOBID = LS_JOB-LOW.
+      APPEND LV_JOBID TO RT_JOBIDS.
+
+      CLEAR LS_JOB.
+
     ENDLOOP.
+
+    CLEAR LS_JOB.
+
   ENDMETHOD.
 
+  METHOD CONFIRM.
 
-  METHOD confirm.
-    DATA lv_answer TYPE c LENGTH 1.
+    DATA LV_ANSWER TYPE C LENGTH 1.
 
     CALL FUNCTION 'POPUP_TO_CONFIRM'
       EXPORTING
-        titlebar              = iv_title
-        text_question         = iv_question
-        default_button        = '2'
-        display_cancel_button = space
+        TITLEBAR              = IV_TITLE
+        TEXT_QUESTION         = IV_QUESTION
+        DEFAULT_BUTTON        = '2'
+        DISPLAY_CANCEL_BUTTON = SPACE
       IMPORTING
-        answer                = lv_answer
+        ANSWER                = LV_ANSWER
       EXCEPTIONS
         OTHERS                = 1.
-    IF sy-subrc = 0 AND lv_answer = '1'.
-      rv_yes = abap_true.
+    IF SY-SUBRC EQ 0 AND LV_ANSWER EQ '1'.
+
+      RV_YES = ABAP_TRUE.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SHOW_RESULT.
 
-  METHOD show_result.
-    DATA lv_text TYPE string.
-    DATA lv_value TYPE string.
-    DATA lv_1 TYPE c LENGTH 11.
-    DATA lv_2 TYPE c LENGTH 11.
-    DATA lv_3 TYPE c LENGTH 11.
-    DATA lv_rejected TYPE i.
-    DATA lv_label TYPE c LENGTH 20.
-    DATA lv_credits TYPE string.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    IF is_result-code = lif_sms=>code-dry_run.
-      lv_text = lcl_text=>get( 'L_PREVIEW' ).
-      WRITE: / lv_text COLOR COL_TOTAL.
-    ELSEIF is_result-sent = abap_true.
-      lv_text = lcl_text=>get( 'L_SENT' ).
-      WRITE: / lv_text COLOR COL_POSITIVE.
+    DATA: LV_TEXT     TYPE STRING,
+          LV_VALUE    TYPE STRING,
+          LV_1        TYPE C LENGTH 11,
+          LV_2        TYPE C LENGTH 11,
+          LV_3        TYPE C LENGTH 11,
+          LV_REJECTED TYPE I,
+          LV_LABEL    TYPE C LENGTH 20,
+          LV_CREDITS  TYPE STRING.
+
+    IF IS_RESULT-CODE EQ LIF_SMS=>CODE-DRY_RUN.
+
+      LV_TEXT = LCL_TEXT=>GET( 'L_PREVIEW' ).
+      WRITE: / LV_TEXT COLOR COL_TOTAL.
+
+    ELSEIF IS_RESULT-SENT EQ ABAP_TRUE.
+
+      LV_TEXT = LCL_TEXT=>GET( 'L_SENT' ).
+      WRITE: / LV_TEXT COLOR COL_POSITIVE.
+
     ELSE.
-      lv_text = lcl_text=>get( 'L_NOT_SENT' ).
-      WRITE: / lv_text COLOR COL_NEGATIVE.
+
+      LV_TEXT = LCL_TEXT=>GET( 'L_NOT_SENT' ).
+      WRITE: / LV_TEXT COLOR COL_NEGATIVE.
+
     ENDIF.
-    lv_text = lcl_text=>get( 'ACT_SEND' ).
-    CASE is_result-action.
-      WHEN lif_sms=>action-otp.
-        lv_text = lcl_text=>get( 'ACT_OTP' ).
-      WHEN lif_sms=>action-template.
-        lv_text = lcl_text=>get( 'ACT_TEMPLATE' ).
+    LV_TEXT = LCL_TEXT=>GET( 'ACT_SEND' ).
+    CASE IS_RESULT-ACTION.
+
+      WHEN LIF_SMS=>ACTION-OTP.
+
+        LV_TEXT = LCL_TEXT=>GET( 'ACT_OTP' ).
+
+      WHEN LIF_SMS=>ACTION-TEMPLATE.
+
+        LV_TEXT = LCL_TEXT=>GET( 'ACT_TEMPLATE' ).
+
     ENDCASE.
-    WRITE: / lv_text.
+    WRITE: / LV_TEXT.
     SKIP.
 
-    lv_label = lcl_text=>get( 'L_RESULT' ).
-    WRITE: / lv_label.
-    CONCATENATE is_result-code `: ` is_result-message INTO lv_text.
-    write_long( lv_text ).
-    IF is_result-jobid IS NOT INITIAL.
-      lv_label = lcl_text=>get( 'L_JOBID' ).
-      WRITE: / lv_label, is_result-jobid.
+    LV_LABEL = LCL_TEXT=>GET( 'L_RESULT' ).
+    WRITE: / LV_LABEL.
+    CONCATENATE IS_RESULT-CODE `: ` IS_RESULT-MESSAGE INTO LV_TEXT.
+    WRITE_LONG( LV_TEXT ).
+    IF IS_RESULT-JOBID IS NOT INITIAL.
+
+      LV_LABEL = LCL_TEXT=>GET( 'L_JOBID' ).
+      WRITE: / LV_LABEL, IS_RESULT-JOBID.
+
     ENDIF.
-    lv_label = lcl_text=>get( 'L_HEADER' ).
-    WRITE: / lv_label, is_result-header.
-    IF is_result-template_id > 0.
-      lv_label = lcl_text=>get( 'P_TID' ).
-      lv_1 = is_result-template_id.
-      CONDENSE lv_1.
-      WRITE: / lv_label, lv_1.
+    LV_LABEL = LCL_TEXT=>GET( 'L_HEADER' ).
+    WRITE: / LV_LABEL, IS_RESULT-HEADER.
+    IF IS_RESULT-TEMPLATE_ID GT 0.
+
+      LV_LABEL = LCL_TEXT=>GET( 'P_TID' ).
+      LV_1 = IS_RESULT-TEMPLATE_ID.
+      CONDENSE LV_1.
+      WRITE: / LV_LABEL, LV_1.
+
     ENDIF.
-    IF is_result-schedule-start_date IS NOT INITIAL.
-      lv_text = lcl_sms_netgsm=>format_time(
-                  iv_date  = is_result-schedule-start_date
-                  iv_time  = is_result-schedule-start_time
-                  iv_style = 'DOT_S' ).
-      lv_value = `-`.
-      IF is_result-schedule-stop_date IS NOT INITIAL.
-        lv_value = lcl_sms_netgsm=>format_time(
-                     iv_date  = is_result-schedule-stop_date
-                     iv_time  = is_result-schedule-stop_time
-                     iv_style = 'DOT_S' ).
+    IF IS_RESULT-SCHEDULE-START_DATE IS NOT INITIAL.
+
+      LV_TEXT = LCL_SMS_NETGSM=>FORMAT_TIME(
+                  IV_DATE  = IS_RESULT-SCHEDULE-START_DATE
+                  IV_TIME  = IS_RESULT-SCHEDULE-START_TIME
+                  IV_STYLE = 'DOT_S' ).
+      LV_VALUE = `-`.
+      IF IS_RESULT-SCHEDULE-STOP_DATE IS NOT INITIAL.
+
+        LV_VALUE = LCL_SMS_NETGSM=>FORMAT_TIME(
+                     IV_DATE  = IS_RESULT-SCHEDULE-STOP_DATE
+                     IV_TIME  = IS_RESULT-SCHEDULE-STOP_TIME
+                     IV_STYLE = 'DOT_S' ).
+
       ENDIF.
-      lv_text = lcl_text=>get( iv_key = 'L_SCHEDULE'
-                               iv_1   = lv_text
-                               iv_2   = lv_value ).
-      write_long( lv_text ).
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_SCHEDULE'
+                               IV_1   = LV_TEXT
+                               IV_2   = LV_VALUE ).
+      WRITE_LONG( LV_TEXT ).
+
     ENDIF.
-    IF is_result-reference IS NOT INITIAL.
-      lv_label = lcl_text=>get( 'L_REFERENCE' ).
-      WRITE: / lv_label, is_result-reference.
+    IF IS_RESULT-REFERENCE IS NOT INITIAL.
+
+      LV_LABEL = LCL_TEXT=>GET( 'L_REFERENCE' ).
+      WRITE: / LV_LABEL, IS_RESULT-REFERENCE.
+
     ENDIF.
 
-    IF is_result-text_info-encoding IS NOT INITIAL.
-      lv_label = lcl_text=>get( 'L_ENC' ).
-      WRITE: / lv_label, is_result-text_info-encoding.
+    IF IS_RESULT-TEXT_INFO-ENCODING IS NOT INITIAL.
+
+      LV_LABEL = LCL_TEXT=>GET( 'L_ENC' ).
+      WRITE: / LV_LABEL, IS_RESULT-TEXT_INFO-ENCODING.
+
     ENDIF.
-    IF is_result-text_info-parts > 0.
-      lv_1 = is_result-text_info-units.
-      lv_2 = is_result-text_info-max_units.
-      lv_3 = is_result-text_info-parts.
-      CONDENSE: lv_1, lv_2, lv_3.
-      lv_text = lcl_text=>get( iv_key = 'L_SIZE'
-                               iv_1   = lv_1
-                               iv_2   = lv_2
-                               iv_3   = lv_3 ).
-      WRITE: / lv_text.
-      IF is_result-text_info-suffix > 0.
-        lv_text = lcl_text=>get( 'L_SUFFIX' ).
-        WRITE: / lv_text.
+    IF IS_RESULT-TEXT_INFO-PARTS GT 0.
+
+      LV_1 = IS_RESULT-TEXT_INFO-UNITS.
+      LV_2 = IS_RESULT-TEXT_INFO-MAX_UNITS.
+      LV_3 = IS_RESULT-TEXT_INFO-PARTS.
+      CONDENSE: LV_1, LV_2, LV_3.
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_SIZE'
+                               IV_1   = LV_1
+                               IV_2   = LV_2
+                               IV_3   = LV_3 ).
+      WRITE: / LV_TEXT.
+      IF IS_RESULT-TEXT_INFO-SUFFIX GT 0.
+
+        LV_TEXT = LCL_TEXT=>GET( 'L_SUFFIX' ).
+        WRITE: / LV_TEXT.
+
       ENDIF.
+
     ENDIF.
 
-    LOOP AT is_result-recipients INTO ls_recipient
-         WHERE ok = abap_false.
-      lv_rejected = lv_rejected + 1.
+    LOOP AT IS_RESULT-RECIPIENTS INTO LS_RECIPIENT
+         WHERE OK EQ ABAP_FALSE.
+
+      LV_REJECTED = LV_REJECTED + 1.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
-    lv_1 = is_result-valid.
-    lv_2 = lv_rejected.
-    CONDENSE: lv_1, lv_2.
+
+    CLEAR LS_RECIPIENT.
+    LV_1 = IS_RESULT-VALID.
+    LV_2 = LV_REJECTED.
+    CONDENSE: LV_1, LV_2.
     SKIP.
-    lv_text = lcl_text=>get( iv_key = 'L_RCPT'
-                             iv_1   = lv_1
-                             iv_2   = lv_2 ).
-    WRITE: / lv_text.
-    IF is_result-valid > 0
-       AND ( is_result-text_info-parts > 0
-             OR is_result-action = lif_sms=>action-template ).
-      lv_credits = credits( is_result ).
-      lv_text = lcl_text=>get( iv_key = 'L_CREDITS'
-                               iv_1   = lv_credits ).
-      WRITE: / lv_text.
+    LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_RCPT'
+                             IV_1   = LV_1
+                             IV_2   = LV_2 ).
+    WRITE: / LV_TEXT.
+    IF IS_RESULT-VALID GT 0
+       AND ( IS_RESULT-TEXT_INFO-PARTS GT 0
+             OR IS_RESULT-ACTION EQ LIF_SMS=>ACTION-TEMPLATE ).
+
+      LV_CREDITS = CREDITS( IS_RESULT ).
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_CREDITS'
+                               IV_1   = LV_CREDITS ).
+      WRITE: / LV_TEXT.
+
     ENDIF.
-    LOOP AT is_result-recipients INTO ls_recipient.
-      IF ls_recipient-ok = abap_true.
-        WRITE: /3 ls_recipient-masked COLOR COL_POSITIVE.
+    LOOP AT IS_RESULT-RECIPIENTS INTO LS_RECIPIENT.
+
+      IF LS_RECIPIENT-OK EQ ABAP_TRUE.
+
+        WRITE: /3 LS_RECIPIENT-MASKED COLOR COL_POSITIVE.
+
       ELSE.
-        WRITE: /3 ls_recipient-masked COLOR COL_NEGATIVE,
-                  ls_recipient-reason.
+
+        WRITE: /3 LS_RECIPIENT-MASKED COLOR COL_NEGATIVE,
+                  LS_RECIPIENT-REASON.
+
       ENDIF.
+
+      CLEAR LS_RECIPIENT.
+
     ENDLOOP.
 
-    IF is_result-code = lif_sms=>code-dry_run.
-      IF is_result-text_info-text IS NOT INITIAL.
+    CLEAR LS_RECIPIENT.
+
+    IF IS_RESULT-CODE EQ LIF_SMS=>CODE-DRY_RUN.
+
+      IF IS_RESULT-TEXT_INFO-TEXT IS NOT INITIAL.
+
         SKIP.
-        heading( 'L_TEXT' ).
-        write_long( is_result-text_info-text ).
+        HEADING( 'L_TEXT' ).
+        WRITE_LONG( IS_RESULT-TEXT_INFO-TEXT ).
+
       ENDIF.
-      IF is_result-request IS NOT INITIAL.
+      IF IS_RESULT-REQUEST IS NOT INITIAL.
+
         SKIP.
-        heading( 'L_REQUEST' ).
-        write_long( is_result-request ).
+        HEADING( 'L_REQUEST' ).
+        WRITE_LONG( IS_RESULT-REQUEST ).
+
       ENDIF.
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SHOW_LENGTH.
 
-  METHOD show_length.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
     SKIP.
-    heading( 'L_LENGTH' ).
-    IF is_length-code = `00`.
-      lv_text = lcl_text=>get( iv_key = 'L_LEN_LINE'
-                               iv_1   = is_length-parts
-                               iv_2   = is_length-used
-                               iv_3   = is_length-left_part ).
-      CONCATENATE is_length-encoding `: ` lv_text INTO lv_text.
-      write_long( lv_text ).
-      lv_text = lcl_text=>get( iv_key = 'L_LEN_LEFT'
-                               iv_1   = is_length-left ).
-      write_long( lv_text ).
+    HEADING( 'L_LENGTH' ).
+    IF IS_LENGTH-CODE EQ `00`.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_LEN_LINE'
+                               IV_1   = IS_LENGTH-PARTS
+                               IV_2   = IS_LENGTH-USED
+                               IV_3   = IS_LENGTH-LEFT_PART ).
+      CONCATENATE IS_LENGTH-ENCODING `: ` LV_TEXT INTO LV_TEXT.
+      WRITE_LONG( LV_TEXT ).
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'L_LEN_LEFT'
+                               IV_1   = IS_LENGTH-LEFT ).
+      WRITE_LONG( LV_TEXT ).
+
     ELSE.
-      write_code( iv_code    = is_length-code
-                  iv_message = is_length-message ).
+
+      WRITE_CODE( IV_CODE    = IS_LENGTH-CODE
+                  IV_MESSAGE = IS_LENGTH-MESSAGE ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD SHOW_LOG_STATE.
 
-  METHOD show_log_state.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
     SKIP.
-    IF iv_saved = abap_true.
-      lv_text = lcl_text=>get( iv_key = 'LOG_SAVED'
-                               iv_1   = lcl_sms_log=>object ).
+    IF IV_SAVED EQ ABAP_TRUE.
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'LOG_SAVED'
+                               IV_1   = LCL_SMS_LOG=>OBJECT ).
+
     ELSE.
-      lv_text = lcl_text=>get( iv_key = 'LOG_NONE'
-                               iv_1   = lcl_sms_log=>object ).
+
+      LV_TEXT = LCL_TEXT=>GET( IV_KEY = 'LOG_NONE'
+                               IV_1   = LCL_SMS_LOG=>OBJECT ).
+
     ENDIF.
-    write_long( lv_text ).
+    WRITE_LONG( LV_TEXT ).
+
   ENDMETHOD.
 
+  METHOD HEADING.
 
-  METHOD heading.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
-    lv_text = lcl_text=>get( iv_key ).
-    WRITE: / lv_text COLOR COL_HEADING.
+    LV_TEXT = LCL_TEXT=>GET( IV_KEY ).
+    WRITE: / LV_TEXT COLOR COL_HEADING.
+
   ENDMETHOD.
 
+  METHOD WRITE_CODE.
 
-  METHOD write_code.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
-    CONCATENATE iv_code `: ` iv_message INTO lv_text.
-    write_long( lv_text ).
+    CONCATENATE IV_CODE `: ` IV_MESSAGE INTO LV_TEXT.
+    WRITE_LONG( LV_TEXT ).
+
   ENDMETHOD.
 
+  METHOD WRITE_LONG.
 
-  METHOD write_long.
     " Line by line, at most 120 characters each
-    DATA lt_lines TYPE string_table.
-    DATA lv_line TYPE string.
-    DATA lv_len TYPE i.
-    DATA lv_off TYPE i.
-    DATA lv_take TYPE i.
-    DATA lv_blank TYPE i.
-    DATA lv_piece TYPE c LENGTH 120.
+    DATA LT_LINES TYPE STRING_TABLE.
 
-    SPLIT iv_text AT cl_abap_char_utilities=>newline
-          INTO TABLE lt_lines.
-    LOOP AT lt_lines INTO lv_line.
-      lv_len = strlen( lv_line ).
-      IF lv_len = 0.
+    DATA: LV_LINE  TYPE STRING,
+          LV_LEN   TYPE I,
+          LV_OFF   TYPE I,
+          LV_TAKE  TYPE I,
+          LV_BLANK TYPE I,
+          LV_PIECE TYPE C LENGTH 120.
+
+    SPLIT IV_TEXT AT CL_ABAP_CHAR_UTILITIES=>NEWLINE
+          INTO TABLE LT_LINES.
+    LOOP AT LT_LINES INTO LV_LINE.
+
+      LV_LEN = STRLEN( LV_LINE ).
+      IF LV_LEN EQ 0.
+
         SKIP.
         CONTINUE.
+
       ENDIF.
-      lv_off = 0.
-      WHILE lv_off < lv_len.
-        lv_take = lv_len - lv_off.
-        IF lv_take > 120.
-          lv_take = 120.
+      LV_OFF = 0.
+      WHILE LV_OFF LT LV_LEN.
+
+        LV_TAKE = LV_LEN - LV_OFF.
+        IF LV_TAKE GT 120.
+
+          LV_TAKE = 120.
           " Break at the last blank, not inside a word
-          FIND ALL OCCURRENCES OF ` ` IN SECTION OFFSET lv_off
-               LENGTH lv_take OF lv_line MATCH OFFSET lv_blank.
-          IF sy-subrc = 0 AND lv_blank > lv_off.
-            lv_take = lv_blank - lv_off + 1.
+          FIND ALL OCCURRENCES OF ` ` IN SECTION OFFSET LV_OFF
+               LENGTH LV_TAKE OF LV_LINE MATCH OFFSET LV_BLANK.
+          IF SY-SUBRC EQ 0 AND LV_BLANK GT LV_OFF.
+
+            LV_TAKE = LV_BLANK - LV_OFF + 1.
+
           ENDIF.
+
         ENDIF.
-        lv_piece = lv_line+lv_off(lv_take).
-        WRITE AT /iv_indent lv_piece.
-        lv_off = lv_off + lv_take.
+        LV_PIECE = LV_LINE+LV_OFF(LV_TAKE).
+        WRITE AT /IV_INDENT LV_PIECE.
+        LV_OFF = LV_OFF + LV_TAKE.
+
       ENDWHILE.
+
+      CLEAR LV_LINE.
+
     ENDLOOP.
+
+    CLEAR LV_LINE.
+
   ENDMETHOD.
 
+  METHOD CREDITS.
 
-  METHOD credits.
-    DATA lv_count TYPE i.
-    DATA lv_char TYPE c LENGTH 11.
+    DATA: LV_COUNT TYPE I,
+          LV_CHAR  TYPE C LENGTH 11.
 
-    IF is_result-action = lif_sms=>action-template.
+    IF IS_RESULT-ACTION EQ LIF_SMS=>ACTION-TEMPLATE.
+
       " The template text is at Netgsm: parts unknown here
-      lv_char = is_result-valid.
-      CONDENSE lv_char.
-      CONCATENATE lv_char ` x ?` INTO rv_count.
+      LV_CHAR = IS_RESULT-VALID.
+      CONDENSE LV_CHAR.
+      CONCATENATE LV_CHAR ` x ?` INTO RV_COUNT.
       RETURN.
+
     ENDIF.
-    lv_count = is_result-valid * is_result-text_info-parts.
-    lv_char = lv_count.
-    CONDENSE lv_char.
-    rv_count = lv_char.
+    LV_COUNT = IS_RESULT-VALID * IS_RESULT-TEXT_INFO-PARTS.
+    LV_CHAR = LV_COUNT.
+    CONDENSE LV_CHAR.
+    RV_COUNT = LV_CHAR.
+
   ENDMETHOD.
 
+  METHOD FINISH.
 
-  METHOD finish.
-    IF iv_ok = abap_true.
-      MESSAGE iv_text TYPE 'S'.
-    ELSEIF sy-batch = abap_true.
+    IF IV_OK EQ ABAP_TRUE.
+
+      MESSAGE IV_TEXT TYPE 'S'.
+
+    ELSEIF SY-BATCH EQ ABAP_TRUE.
+
       " Ends the job as cancelled, so job monitoring sees it
-      MESSAGE iv_text TYPE 'E'.
+      MESSAGE IV_TEXT TYPE 'E'.
+
     ELSE.
-      MESSAGE iv_text TYPE 'S' DISPLAY LIKE 'E'.
+
+      MESSAGE IV_TEXT TYPE 'S' DISPLAY LIKE 'E'.
+
     ENDIF.
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
 INITIALIZATION.
-  lcl_app=>set_texts( ).
+  LCL_APP=>SET_TEXTS( ).
 
 AT SELECTION-SCREEN OUTPUT.
-  lcl_app=>set_screen( ).
+  LCL_APP=>SET_SCREEN( ).
 
 START-OF-SELECTION.
-  lcl_app=>run( ).
-
+  LCL_APP=>RUN( ).
 
 *&---------------------------------------------------------------------*
 *& Entries for other programs. Example:
@@ -5460,180 +7036,194 @@ START-OF-SELECTION.
 *& application log when ZCHE_SMS exists in SLG0. The caller needs
 *& S_ICF for the destination.
 *&---------------------------------------------------------------------*
-FORM send_sms USING it_numbers TYPE string_table
-                    iv_text    TYPE csequence
-                    iv_header  TYPE csequence
-                    iv_dry_run TYPE abap_bool
-              CHANGING cv_code    TYPE string
-                       cv_jobid   TYPE string
-                       cv_message TYPE string.
+FORM SEND_SMS USING IT_NUMBERS TYPE STRING_TABLE
+                    IV_TEXT    TYPE CSEQUENCE
+                    IV_HEADER  TYPE CSEQUENCE
+                    IV_DRY_RUN TYPE ABAP_BOOL
+              CHANGING CV_CODE    TYPE STRING
+                       CV_JOBID   TYPE STRING
+                       CV_MESSAGE TYPE STRING.
 
-  PERFORM send_sms_opt USING it_numbers iv_text iv_header iv_dry_run
-                             lif_sms=>encoding-auto lif_sms=>iys-info
-                             abap_false
-                       CHANGING cv_code cv_jobid cv_message.
+  PERFORM SEND_SMS_OPT USING IT_NUMBERS IV_TEXT IV_HEADER IV_DRY_RUN
+                             LIF_SMS=>ENCODING-AUTO LIF_SMS=>IYS-INFO
+                             ABAP_FALSE
+                       CHANGING CV_CODE CV_JOBID CV_MESSAGE.
+
 ENDFORM.
-
 
 *&---------------------------------------------------------------------*
 *& Same with the options: iv_encoding AUTO, TR, UNICODE or ASCII;
 *& iv_iys '0', '11' or '12'; iv_log_text 'X' logs the message text.
 *&---------------------------------------------------------------------*
-FORM send_sms_opt USING it_numbers  TYPE string_table
-                        iv_text     TYPE csequence
-                        iv_header   TYPE csequence
-                        iv_dry_run  TYPE abap_bool
-                        iv_encoding TYPE csequence
-                        iv_iys      TYPE csequence
-                        iv_log_text TYPE abap_bool
-                  CHANGING cv_code    TYPE string
-                           cv_jobid   TYPE string
-                           cv_message TYPE string.
+FORM SEND_SMS_OPT USING IT_NUMBERS  TYPE STRING_TABLE
+                        IV_TEXT     TYPE CSEQUENCE
+                        IV_HEADER   TYPE CSEQUENCE
+                        IV_DRY_RUN  TYPE ABAP_BOOL
+                        IV_ENCODING TYPE CSEQUENCE
+                        IV_IYS      TYPE CSEQUENCE
+                        IV_LOG_TEXT TYPE ABAP_BOOL
+                  CHANGING CV_CODE    TYPE STRING
+                           CV_JOBID   TYPE STRING
+                           CV_MESSAGE TYPE STRING.
 
-  DATA ls_schedule TYPE lif_sms=>ty_schedule.
+  DATA LS_SCHEDULE TYPE LIF_SMS=>TY_SCHEDULE.
 
-  PERFORM send_sms_at USING it_numbers iv_text iv_header iv_dry_run
-                            iv_encoding iv_iys iv_log_text
-                            ls_schedule ``
-                      CHANGING cv_code cv_jobid cv_message.
+  PERFORM SEND_SMS_AT USING IT_NUMBERS IV_TEXT IV_HEADER IV_DRY_RUN
+                            IV_ENCODING IV_IYS IV_LOG_TEXT
+                            LS_SCHEDULE ``
+                      CHANGING CV_CODE CV_JOBID CV_MESSAGE.
+
 ENDFORM.
-
 
 *&---------------------------------------------------------------------*
 *& Send later: is_schedule holds date and time in Turkish time (an
 *& initial start date means now); iv_reference is your own ID for
 *& the delivery report (referansID). Cancel with FORM cancel_sms.
 *&---------------------------------------------------------------------*
-FORM send_sms_at USING it_numbers   TYPE string_table
-                       iv_text      TYPE csequence
-                       iv_header    TYPE csequence
-                       iv_dry_run   TYPE abap_bool
-                       iv_encoding  TYPE csequence
-                       iv_iys       TYPE csequence
-                       iv_log_text  TYPE abap_bool
-                       is_schedule  TYPE lif_sms=>ty_schedule
-                       iv_reference TYPE csequence
-                 CHANGING cv_code    TYPE string
-                          cv_jobid   TYPE string
-                          cv_message TYPE string.
+FORM SEND_SMS_AT USING IT_NUMBERS   TYPE STRING_TABLE
+                       IV_TEXT      TYPE CSEQUENCE
+                       IV_HEADER    TYPE CSEQUENCE
+                       IV_DRY_RUN   TYPE ABAP_BOOL
+                       IV_ENCODING  TYPE CSEQUENCE
+                       IV_IYS       TYPE CSEQUENCE
+                       IV_LOG_TEXT  TYPE ABAP_BOOL
+                       IS_SCHEDULE  TYPE LIF_SMS=>TY_SCHEDULE
+                       IV_REFERENCE TYPE CSEQUENCE
+                 CHANGING CV_CODE    TYPE STRING
+                          CV_JOBID   TYPE STRING
+                          CV_MESSAGE TYPE STRING.
 
-  DATA lo_sms TYPE REF TO lcl_sms_netgsm.
-  DATA ls_result TYPE lif_sms=>ty_result.
-  DATA lv_encoding TYPE lif_sms=>ty_encoding.
-  DATA lv_iys TYPE lif_sms=>ty_iys.
+  DATA LO_SMS TYPE REF TO LCL_SMS_NETGSM.
 
-  lv_encoding = iv_encoding.
-  lv_iys = iv_iys.
-  CREATE OBJECT lo_sms.
-  ls_result = lo_sms->send( it_numbers   = it_numbers
-                            iv_text      = iv_text
-                            iv_header    = iv_header
-                            iv_encoding  = lv_encoding
-                            iv_iys       = lv_iys
-                            is_schedule  = is_schedule
-                            iv_reference = iv_reference
-                            iv_dry_run   = iv_dry_run ).
-  IF ls_result-code <> lif_sms=>code-dry_run.
-    lcl_sms_log=>write( is_result    = ls_result
-                        iv_with_text = iv_log_text ).
+  DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+
+  DATA: LV_ENCODING TYPE LIF_SMS=>TY_ENCODING,
+        LV_IYS      TYPE LIF_SMS=>TY_IYS.
+
+  LV_ENCODING = IV_ENCODING.
+  LV_IYS = IV_IYS.
+  CREATE OBJECT LO_SMS.
+  LS_RESULT = LO_SMS->SEND( IT_NUMBERS   = IT_NUMBERS
+                            IV_TEXT      = IV_TEXT
+                            IV_HEADER    = IV_HEADER
+                            IV_ENCODING  = LV_ENCODING
+                            IV_IYS       = LV_IYS
+                            IS_SCHEDULE  = IS_SCHEDULE
+                            IV_REFERENCE = IV_REFERENCE
+                            IV_DRY_RUN   = IV_DRY_RUN ).
+  IF LS_RESULT-CODE NE LIF_SMS=>CODE-DRY_RUN.
+
+    LCL_SMS_LOG=>WRITE( IS_RESULT    = LS_RESULT
+                        IV_WITH_TEXT = IV_LOG_TEXT ).
+
   ENDIF.
-  cv_code = ls_result-code.
-  cv_jobid = ls_result-jobid.
-  cv_message = ls_result-message.
-ENDFORM.
+  CV_CODE = LS_RESULT-CODE.
+  CV_JOBID = LS_RESULT-JOBID.
+  CV_MESSAGE = LS_RESULT-MESSAGE.
 
+ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& OTP SMS: one number, one part, no Turkish letters (iv_ascii 'X'
 *& turns them into Latin ones). Needs an OTP package at Netgsm.
 *&---------------------------------------------------------------------*
-FORM send_otp USING iv_number  TYPE csequence
-                    iv_text    TYPE csequence
-                    iv_header  TYPE csequence
-                    iv_ascii   TYPE abap_bool
-                    iv_dry_run TYPE abap_bool
-              CHANGING cv_code    TYPE string
-                       cv_jobid   TYPE string
-                       cv_message TYPE string.
+FORM SEND_OTP USING IV_NUMBER  TYPE CSEQUENCE
+                    IV_TEXT    TYPE CSEQUENCE
+                    IV_HEADER  TYPE CSEQUENCE
+                    IV_ASCII   TYPE ABAP_BOOL
+                    IV_DRY_RUN TYPE ABAP_BOOL
+              CHANGING CV_CODE    TYPE STRING
+                       CV_JOBID   TYPE STRING
+                       CV_MESSAGE TYPE STRING.
 
-  DATA lo_sms TYPE REF TO lcl_sms_netgsm.
-  DATA ls_result TYPE lif_sms=>ty_result.
-  DATA lt_numbers TYPE string_table.
-  DATA lv_number TYPE string.
+  DATA LO_SMS TYPE REF TO LCL_SMS_NETGSM.
 
-  lv_number = iv_number.
-  APPEND lv_number TO lt_numbers.
-  CREATE OBJECT lo_sms.
-  ls_result = lo_sms->send_otp( it_numbers = lt_numbers
-                                iv_text    = iv_text
-                                iv_header  = iv_header
-                                iv_ascii   = iv_ascii
-                                iv_dry_run = iv_dry_run ).
-  IF ls_result-code <> lif_sms=>code-dry_run.
+  DATA LT_NUMBERS TYPE STRING_TABLE.
+
+  DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+
+  DATA LV_NUMBER TYPE STRING.
+
+  LV_NUMBER = IV_NUMBER.
+  APPEND LV_NUMBER TO LT_NUMBERS.
+  CREATE OBJECT LO_SMS.
+  LS_RESULT = LO_SMS->SEND_OTP( IT_NUMBERS = LT_NUMBERS
+                                IV_TEXT    = IV_TEXT
+                                IV_HEADER  = IV_HEADER
+                                IV_ASCII   = IV_ASCII
+                                IV_DRY_RUN = IV_DRY_RUN ).
+  IF LS_RESULT-CODE NE LIF_SMS=>CODE-DRY_RUN.
+
     " An OTP text is a secret code: never logged
-    lcl_sms_log=>write( is_result    = ls_result
-                        iv_with_text = abap_false ).
-  ENDIF.
-  cv_code = ls_result-code.
-  cv_jobid = ls_result-jobid.
-  cv_message = ls_result-message.
-ENDFORM.
+    LCL_SMS_LOG=>WRITE( IS_RESULT    = LS_RESULT
+                        IV_WITH_TEXT = ABAP_FALSE ).
 
+  ENDIF.
+  CV_CODE = LS_RESULT-CODE.
+  CV_JOBID = LS_RESULT-JOBID.
+  CV_MESSAGE = LS_RESULT-MESSAGE.
+
+ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Template SMS: it_params holds lines name=value, the same values
 *& for every number. Template IDs: action "List templates".
 *&---------------------------------------------------------------------*
-FORM send_template USING it_numbers     TYPE string_table
-                         iv_template_id TYPE i
-                         it_params      TYPE string_table
-                         iv_header      TYPE csequence
-                         iv_dry_run     TYPE abap_bool
-                   CHANGING cv_code    TYPE string
-                            cv_jobid   TYPE string
-                            cv_message TYPE string.
+FORM SEND_TEMPLATE USING IT_NUMBERS     TYPE STRING_TABLE
+                         IV_TEMPLATE_ID TYPE I
+                         IT_PARAMS      TYPE STRING_TABLE
+                         IV_HEADER      TYPE CSEQUENCE
+                         IV_DRY_RUN     TYPE ABAP_BOOL
+                   CHANGING CV_CODE    TYPE STRING
+                            CV_JOBID   TYPE STRING
+                            CV_MESSAGE TYPE STRING.
 
-  DATA lo_sms TYPE REF TO lcl_sms_netgsm.
-  DATA ls_result TYPE lif_sms=>ty_result.
-  DATA lt_params TYPE lif_sms=>ty_params.
+  DATA LO_SMS TYPE REF TO LCL_SMS_NETGSM.
 
-  lt_params = lcl_app=>params_of( it_params ).
-  CREATE OBJECT lo_sms.
-  ls_result = lo_sms->send_template( it_numbers     = it_numbers
-                                     iv_template_id = iv_template_id
-                                     it_params      = lt_params
-                                     iv_header      = iv_header
-                                     iv_dry_run     = iv_dry_run ).
-  IF ls_result-code <> lif_sms=>code-dry_run.
-    lcl_sms_log=>write( is_result    = ls_result
-                        iv_with_text = abap_false ).
+  DATA LT_PARAMS TYPE LIF_SMS=>TY_PARAMS.
+
+  DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+
+  LT_PARAMS = LCL_APP=>PARAMS_OF( IT_PARAMS ).
+  CREATE OBJECT LO_SMS.
+  LS_RESULT = LO_SMS->SEND_TEMPLATE( IT_NUMBERS     = IT_NUMBERS
+                                     IV_TEMPLATE_ID = IV_TEMPLATE_ID
+                                     IT_PARAMS      = LT_PARAMS
+                                     IV_HEADER      = IV_HEADER
+                                     IV_DRY_RUN     = IV_DRY_RUN ).
+  IF LS_RESULT-CODE NE LIF_SMS=>CODE-DRY_RUN.
+
+    LCL_SMS_LOG=>WRITE( IS_RESULT    = LS_RESULT
+                        IV_WITH_TEXT = ABAP_FALSE ).
+
   ENDIF.
-  cv_code = ls_result-code.
-  cv_jobid = ls_result-jobid.
-  cv_message = ls_result-message.
-ENDFORM.
+  CV_CODE = LS_RESULT-CODE.
+  CV_JOBID = LS_RESULT-JOBID.
+  CV_MESSAGE = LS_RESULT-MESSAGE.
 
+ENDFORM.
 
 *&---------------------------------------------------------------------*
 *& Cancels an SMS scheduled for later. cv_code '00' = cancelled.
 *&---------------------------------------------------------------------*
-FORM cancel_sms USING iv_jobid TYPE csequence
-                CHANGING cv_code    TYPE string
-                         cv_message TYPE string.
+FORM CANCEL_SMS USING IV_JOBID TYPE CSEQUENCE
+                CHANGING CV_CODE    TYPE STRING
+                         CV_MESSAGE TYPE STRING.
 
-  DATA lo_sms TYPE REF TO lcl_sms_netgsm.
-  DATA ls_answer TYPE lif_sms=>ty_answer.
+  DATA LO_SMS TYPE REF TO LCL_SMS_NETGSM.
 
-  CREATE OBJECT lo_sms.
-  ls_answer = lo_sms->cancel( iv_jobid ).
-  lcl_sms_log=>write_simple( iv_action  = lif_sms=>action-cancel
-                             iv_code    = ls_answer-code
-                             iv_message = ls_answer-message
-                             iv_jobid   = ls_answer-jobid ).
-  cv_code = ls_answer-code.
-  cv_message = ls_answer-message.
+  DATA LS_ANSWER TYPE LIF_SMS=>TY_ANSWER.
+
+  CREATE OBJECT LO_SMS.
+  LS_ANSWER = LO_SMS->CANCEL( IV_JOBID ).
+  LCL_SMS_LOG=>WRITE_SIMPLE( IV_ACTION  = LIF_SMS=>ACTION-CANCEL
+                             IV_CODE    = LS_ANSWER-CODE
+                             IV_MESSAGE = LS_ANSWER-MESSAGE
+                             IV_JOBID   = LS_ANSWER-JOBID ).
+  CV_CODE = LS_ANSWER-CODE.
+  CV_MESSAGE = LS_ANSWER-MESSAGE.
+
 ENDFORM.
-
 
 *&---------------------------------------------------------------------*
 *& ABAP Unit tests: Program > Execute > Unit Tests (Ctrl+Shift+F10).
@@ -5642,960 +7232,1041 @@ ENDFORM.
 *& Written for release 7.00: CL_AUNIT_ASSERT, and risk level and
 *& duration as "#AU pseudo comments.
 *&---------------------------------------------------------------------*
-CLASS ltd_backend DEFINITION FINAL FOR TESTING.
+CLASS LTD_BACKEND DEFINITION FINAL FOR TESTING.
   PUBLIC SECTION.
-    INTERFACES lif_sms_backend.
+    INTERFACES LIF_SMS_BACKEND.
 
-    DATA authorized TYPE abap_bool VALUE abap_true.
-    DATA dest_type TYPE rfcdes-rfctype VALUE 'G'.
-    DATA status TYPE i VALUE 200.
-    DATA reply TYPE string.
-    DATA no_answer TYPE abap_bool.
-    DATA no_answer_code TYPE string VALUE `NO_CONN`.
-    DATA calls TYPE i.
-    DATA last_method TYPE string.
-    DATA last_path TYPE string.
-    DATA last_body TYPE string.
-    DATA last_destination TYPE rfcdest.
+    DATA AUTHORIZED TYPE ABAP_BOOL VALUE ABAP_TRUE.
+    DATA DEST_TYPE TYPE RFCDES-RFCTYPE VALUE 'G'.
+    DATA STATUS TYPE I VALUE 200.
+    DATA REPLY TYPE STRING.
+    DATA NO_ANSWER TYPE ABAP_BOOL.
+    DATA NO_ANSWER_CODE TYPE STRING VALUE `NO_CONN`.
+    DATA CALLS TYPE I.
+    DATA LAST_METHOD TYPE STRING.
+    DATA LAST_PATH TYPE STRING.
+    DATA LAST_BODY TYPE STRING.
+    DATA LAST_DESTINATION TYPE RFCDEST.
 ENDCLASS.
 
+CLASS LTD_BACKEND IMPLEMENTATION.
 
-CLASS ltd_backend IMPLEMENTATION.
+  METHOD LIF_SMS_BACKEND~HAS_AUTHORITY.
 
-  METHOD lif_sms_backend~has_authority.
-    rv_yes = authorized.
+    RV_YES = AUTHORIZED.
+
   ENDMETHOD.
 
+  METHOD LIF_SMS_BACKEND~DESTINATION_TYPE.
 
-  METHOD lif_sms_backend~destination_type.
-    rv_type = dest_type.
+    RV_TYPE = DEST_TYPE.
+
   ENDMETHOD.
 
+  METHOD LIF_SMS_BACKEND~CALL.
 
-  METHOD lif_sms_backend~call.
-    calls = calls + 1.
-    last_destination = iv_destination.
-    last_method = iv_method.
-    last_path = iv_path.
-    last_body = iv_body.
-    IF no_answer = abap_true.
-      RAISE EXCEPTION TYPE lcx_sms
+    CALLS = CALLS + 1.
+    LAST_DESTINATION = IV_DESTINATION.
+    LAST_METHOD = IV_METHOD.
+    LAST_PATH = IV_PATH.
+    LAST_BODY = IV_BODY.
+    IF NO_ANSWER EQ ABAP_TRUE.
+
+      RAISE EXCEPTION TYPE LCX_SMS
         EXPORTING
-          code = no_answer_code
-          text = `timeout`.
+          CODE = NO_ANSWER_CODE
+          TEXT = `timeout`.
+
     ENDIF.
-    rs_http-status = status.
-    rs_http-body = reply.
+    RS_HTTP-STATUS = STATUS.
+    RS_HTTP-BODY = REPLY.
+
   ENDMETHOD.
 
 ENDCLASS.
-
 
 *----------------------------------------------------------------------*
 * Helpers for the tests: characters by code point, repeated text
 *----------------------------------------------------------------------*
-CLASS ltu_chars DEFINITION FINAL FOR TESTING.
+CLASS LTU_CHARS DEFINITION FINAL FOR TESTING.
   PUBLIC SECTION.
-    CLASS-METHODS char
+    CLASS-METHODS CHAR
       IMPORTING
-        iv_code_point  TYPE i
+        IV_CODE_POINT  TYPE I
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
     "! Text from UTF-8 bytes, for an emoji
-    CLASS-METHODS utf8
+    CLASS-METHODS UTF8
       IMPORTING
-        iv_bytes       TYPE xstring
+        IV_BYTES       TYPE XSTRING
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 
-    CLASS-METHODS repeat
+    CLASS-METHODS REPEAT
       IMPORTING
-        iv_text        TYPE string
-        iv_times       TYPE i
+        IV_TEXT        TYPE STRING
+        IV_TIMES       TYPE I
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 ENDCLASS.
 
+CLASS LTU_CHARS IMPLEMENTATION.
 
-CLASS ltu_chars IMPLEMENTATION.
+  METHOD CHAR.
 
-  METHOD char.
-    DATA lv_char TYPE c LENGTH 1.
+    DATA LV_CHAR TYPE C LENGTH 1.
 
-    lv_char = cl_abap_conv_in_ce=>uccpi( iv_code_point ).
-    rv_text = lv_char.
+    LV_CHAR = CL_ABAP_CONV_IN_CE=>UCCPI( IV_CODE_POINT ).
+    RV_TEXT = LV_CHAR.
+
   ENDMETHOD.
 
+  METHOD UTF8.
 
-  METHOD utf8.
-    DATA lo_in TYPE REF TO cl_abap_conv_in_ce.
+    DATA LO_IN TYPE REF TO CL_ABAP_CONV_IN_CE.
 
-    lo_in = cl_abap_conv_in_ce=>create( encoding = 'UTF-8'
-                                        input    = iv_bytes ).
-    lo_in->read( IMPORTING data = rv_text ).
+    LO_IN = CL_ABAP_CONV_IN_CE=>CREATE( ENCODING = 'UTF-8'
+                                        INPUT    = IV_BYTES ).
+    LO_IN->READ( IMPORTING DATA = RV_TEXT ).
+
   ENDMETHOD.
 
+  METHOD REPEAT.
 
-  METHOD repeat.
-    DO iv_times TIMES.
-      CONCATENATE rv_text iv_text INTO rv_text.
+    DO IV_TIMES TIMES.
+
+      CONCATENATE RV_TEXT IV_TEXT INTO RV_TEXT.
+
     ENDDO.
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
-CLASS ltc_phone DEFINITION FINAL FOR TESTING.
+CLASS LTC_PHONE DEFINITION FINAL FOR TESTING.
   "#AU Risk_Level Harmless
   "#AU Duration Short
   PRIVATE SECTION.
-    METHODS accepts_turkish_forms FOR TESTING.
-    METHODS rejects_others FOR TESTING.
-    METHODS marks_duplicates FOR TESTING.
-    METHODS masks FOR TESTING.
+    METHODS ACCEPTS_TURKISH_FORMS FOR TESTING.
+    METHODS REJECTS_OTHERS FOR TESTING.
+    METHODS MARKS_DUPLICATES FOR TESTING.
+    METHODS MASKS FOR TESTING.
 
-    METHODS assert_number
+    METHODS ASSERT_NUMBER
       IMPORTING
-        iv_input  TYPE string
-        iv_number TYPE string.
+        IV_INPUT  TYPE STRING
+        IV_NUMBER TYPE STRING.
 
-    METHODS assert_rejected
+    METHODS ASSERT_REJECTED
       IMPORTING
-        iv_input TYPE string.
+        IV_INPUT TYPE STRING.
 ENDCLASS.
 
+CLASS LTC_PHONE IMPLEMENTATION.
 
-CLASS ltc_phone IMPLEMENTATION.
+  METHOD ACCEPTS_TURKISH_FORMS.
 
-  METHOD accepts_turkish_forms.
-    assert_number( iv_input  = `+90 500 111 22 33`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `0090 500 111 22 33`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `90 500 1112233`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `0500 111 22 33`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `(0500) 111-22-33`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `500.111.22.33`
-                   iv_number = `5001112233` ).
-    assert_number( iv_input  = `5001112233`
-                   iv_number = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `+90 500 111 22 33`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `0090 500 111 22 33`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `90 500 1112233`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `0500 111 22 33`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `(0500) 111-22-33`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `500.111.22.33`
+                   IV_NUMBER = `5001112233` ).
+    ASSERT_NUMBER( IV_INPUT  = `5001112233`
+                   IV_NUMBER = `5001112233` ).
+
   ENDMETHOD.
 
+  METHOD REJECTS_OTHERS.
 
-  METHOD rejects_others.
     " Landline, too short, too long, letters, foreign, sign only
-    assert_rejected( `0212 000 00 00` ).
-    assert_rejected( `500 111 22` ).
-    assert_rejected( `0500 111 22 334` ).
-    assert_rejected( `0500 ABC 22 33` ).
-    assert_rejected( `+49 151 0000000` ).
-    assert_rejected( `+` ).
+    ASSERT_REJECTED( `0212 000 00 00` ).
+    ASSERT_REJECTED( `500 111 22` ).
+    ASSERT_REJECTED( `0500 111 22 334` ).
+    ASSERT_REJECTED( `0500 ABC 22 33` ).
+    ASSERT_REJECTED( `+49 151 0000000` ).
+    ASSERT_REJECTED( `+` ).
+
   ENDMETHOD.
 
+  METHOD MARKS_DUPLICATES.
 
-  METHOD marks_duplicates.
-    DATA lt_inputs TYPE string_table.
-    DATA lt_recipients TYPE lif_sms=>ty_recipients.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
-    DATA lv_count TYPE i.
+    DATA: LT_INPUTS     TYPE STRING_TABLE,
+          LT_RECIPIENTS TYPE LIF_SMS=>TY_RECIPIENTS.
 
-    APPEND `0500 111 22 33` TO lt_inputs.
-    APPEND `` TO lt_inputs.
-    APPEND `+905001112233` TO lt_inputs.
-    APPEND `5001112244` TO lt_inputs.
-    lt_recipients = lcl_sms_phone=>normalize_all( lt_inputs ).
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    DESCRIBE TABLE lt_recipients LINES lv_count.
-    cl_aunit_assert=>assert_equals( act = lv_count
-                                    exp = 3
-                                    msg = 'empty entry skipped' ).
-    READ TABLE lt_recipients INTO ls_recipient INDEX 2.
-    cl_aunit_assert=>assert_equals( act = ls_recipient-ok
-                                    exp = abap_false
-                                    msg = 'second one is a duplicate' ).
-    READ TABLE lt_recipients INTO ls_recipient INDEX 3.
-    cl_aunit_assert=>assert_equals( act = ls_recipient-ok
-                                    exp = abap_true
-                                    msg = 'other number stays' ).
+    DATA LV_COUNT TYPE I.
+
+    APPEND `0500 111 22 33` TO LT_INPUTS.
+    APPEND `` TO LT_INPUTS.
+    APPEND `+905001112233` TO LT_INPUTS.
+    APPEND `5001112244` TO LT_INPUTS.
+    LT_RECIPIENTS = LCL_SMS_PHONE=>NORMALIZE_ALL( LT_INPUTS ).
+
+    DESCRIBE TABLE LT_RECIPIENTS LINES LV_COUNT.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_COUNT
+                                    EXP = 3
+                                    MSG = 'empty entry skipped' ).
+    CLEAR LS_RECIPIENT.
+    READ TABLE LT_RECIPIENTS
+         INTO LS_RECIPIENT
+         INDEX 2.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RECIPIENT-OK
+                                    EXP = ABAP_FALSE
+                                    MSG = 'second one is a duplicate' ).
+    CLEAR LS_RECIPIENT.
+    READ TABLE LT_RECIPIENTS
+         INTO LS_RECIPIENT
+         INDEX 3.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RECIPIENT-OK
+                                    EXP = ABAP_TRUE
+                                    MSG = 'other number stays' ).
+
   ENDMETHOD.
 
+  METHOD MASKS.
 
-  METHOD masks.
-    DATA lv_masked TYPE string.
+    DATA LV_MASKED TYPE STRING.
 
-    lv_masked = lcl_sms_phone=>mask( '5001112233' ).
-    cl_aunit_assert=>assert_equals( act = lv_masked
-                                    exp = `5** *** ** 33`
-                                    msg = 'mask' ).
-    lv_masked = lcl_sms_phone=>mask_any( '0212 000 00 45' ).
-    cl_aunit_assert=>assert_equals( act = lv_masked
-                                    exp = `**** *** ** 45`
-                                    msg = 'mask_any' ).
+    LV_MASKED = LCL_SMS_PHONE=>MASK( '5001112233' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_MASKED
+                                    EXP = `5** *** ** 33`
+                                    MSG = 'mask' ).
+    LV_MASKED = LCL_SMS_PHONE=>MASK_ANY( '0212 000 00 45' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_MASKED
+                                    EXP = `**** *** ** 45`
+                                    MSG = 'mask_any' ).
+
   ENDMETHOD.
 
+  METHOD ASSERT_NUMBER.
 
-  METHOD assert_number.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    ls_recipient = lcl_sms_phone=>normalize( iv_input ).
-    cl_aunit_assert=>assert_equals( act = ls_recipient-ok
-                                    exp = abap_true
-                                    msg = iv_input ).
-    cl_aunit_assert=>assert_equals( act = ls_recipient-number
-                                    exp = iv_number
-                                    msg = iv_input ).
+    LS_RECIPIENT = LCL_SMS_PHONE=>NORMALIZE( IV_INPUT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RECIPIENT-OK
+                                    EXP = ABAP_TRUE
+                                    MSG = IV_INPUT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RECIPIENT-NUMBER
+                                    EXP = IV_NUMBER
+                                    MSG = IV_INPUT ).
+
   ENDMETHOD.
 
+  METHOD ASSERT_REJECTED.
 
-  METHOD assert_rejected.
-    DATA ls_recipient TYPE lif_sms=>ty_recipient.
+    DATA LS_RECIPIENT TYPE LIF_SMS=>TY_RECIPIENT.
 
-    ls_recipient = lcl_sms_phone=>normalize( iv_input ).
-    cl_aunit_assert=>assert_equals( act = ls_recipient-ok
-                                    exp = abap_false
-                                    msg = iv_input ).
-    cl_aunit_assert=>assert_not_initial( act = ls_recipient-reason
-                                         msg = iv_input ).
+    LS_RECIPIENT = LCL_SMS_PHONE=>NORMALIZE( IV_INPUT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RECIPIENT-OK
+                                    EXP = ABAP_FALSE
+                                    MSG = IV_INPUT ).
+    CL_AUNIT_ASSERT=>ASSERT_NOT_INITIAL( ACT = LS_RECIPIENT-REASON
+                                         MSG = IV_INPUT ).
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
-CLASS ltc_text DEFINITION FINAL FOR TESTING.
+CLASS LTC_TEXT DEFINITION FINAL FOR TESTING.
   "#AU Risk_Level Harmless
   "#AU Duration Short
   PRIVATE SECTION.
-    METHODS gsm_part_limits FOR TESTING.
-    METHODS header_suffix FOR TESTING.
-    METHODS turkish_chooses_tr FOR TESTING.
-    METHODS soft_turkish_letters FOR TESTING.
-    METHODS extension_counts_two FOR TESTING.
-    METHODS emoji_chooses_unicode FOR TESTING.
-    METHODS tr_refuses_emoji FOR TESTING.
-    METHODS ascii_converts FOR TESTING.
-    METHODS too_long FOR TESTING.
-    METHODS empty_text FOR TESTING.
+    METHODS GSM_PART_LIMITS FOR TESTING.
+    METHODS HEADER_SUFFIX FOR TESTING.
+    METHODS TURKISH_CHOOSES_TR FOR TESTING.
+    METHODS SOFT_TURKISH_LETTERS FOR TESTING.
+    METHODS EXTENSION_COUNTS_TWO FOR TESTING.
+    METHODS EMOJI_CHOOSES_UNICODE FOR TESTING.
+    METHODS TR_REFUSES_EMOJI FOR TESTING.
+    METHODS ASCII_CONVERTS FOR TESTING.
+    METHODS TOO_LONG FOR TESTING.
+    METHODS EMPTY_TEXT FOR TESTING.
 
     "! Analyzes a text of iv_times letters a
-    METHODS letters
+    METHODS LETTERS
       IMPORTING
-        iv_times       TYPE i
-        iv_header      TYPE string
-        iv_encoding    TYPE lif_sms=>ty_encoding
-                       DEFAULT lif_sms=>encoding-auto
+        IV_TIMES       TYPE I
+        IV_HEADER      TYPE STRING
+        IV_ENCODING    TYPE LIF_SMS=>TY_ENCODING
+                       DEFAULT LIF_SMS=>ENCODING-AUTO
       RETURNING
-        value(rs_info) TYPE lif_sms=>ty_text_info.
+        VALUE(RS_INFO) TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    METHODS emoji_text
+    METHODS EMOJI_TEXT
       RETURNING
-        value(rv_text) TYPE string.
+        VALUE(RV_TEXT) TYPE STRING.
 ENDCLASS.
 
+CLASS LTC_TEXT IMPLEMENTATION.
 
-CLASS ltc_text IMPLEMENTATION.
+  METHOD LETTERS.
 
-  METHOD letters.
-    DATA lv_text TYPE string.
+    DATA LV_TEXT TYPE STRING.
 
-    lv_text = ltu_chars=>repeat( iv_text = `a` iv_times = iv_times ).
-    rs_info = lcl_sms_text=>analyze( iv_text     = lv_text
-                                     iv_encoding = iv_encoding
-                                     iv_header   = iv_header ).
+    LV_TEXT = LTU_CHARS=>REPEAT( IV_TEXT = `a` IV_TIMES = IV_TIMES ).
+    RS_INFO = LCL_SMS_TEXT=>ANALYZE( IV_TEXT     = LV_TEXT
+                                     IV_ENCODING = IV_ENCODING
+                                     IV_HEADER   = IV_HEADER ).
+
   ENDMETHOD.
 
+  METHOD EMOJI_TEXT.
 
-  METHOD emoji_text.
-    DATA lv_emoji TYPE string.
+    DATA LV_EMOJI TYPE STRING.
 
     " ok + grinning face (U+1F600), two UTF-16 code units
-    lv_emoji = ltu_chars=>utf8( 'F09F9880' ).
-    CONCATENATE `ok ` lv_emoji INTO rv_text.
+    LV_EMOJI = LTU_CHARS=>UTF8( 'F09F9880' ).
+    CONCATENATE `ok ` LV_EMOJI INTO RV_TEXT.
+
   ENDMETHOD.
 
+  METHOD GSM_PART_LIMITS.
 
-  METHOD gsm_part_limits.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
     " Numeric sender name: no suffix
-    ls_info = letters( iv_times = 160 iv_header = `8500000000` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-gsm
-                                    msg = 'plain text is GSM' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 1
-                                    msg = '160 fit one part' ).
-    ls_info = letters( iv_times = 161 iv_header = `8500000000` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 2
-                                    msg = '161 need two parts' ).
-    ls_info = letters( iv_times = 307 iv_header = `8500000000` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 3
-                                    msg = '307 = 2 x 153 + 1' ).
+    LS_INFO = LETTERS( IV_TIMES = 160 IV_HEADER = `8500000000` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-GSM
+                                    MSG = 'plain text is GSM' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 1
+                                    MSG = '160 fit one part' ).
+    LS_INFO = LETTERS( IV_TIMES = 161 IV_HEADER = `8500000000` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 2
+                                    MSG = '161 need two parts' ).
+    LS_INFO = LETTERS( IV_TIMES = 307 IV_HEADER = `8500000000` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 3
+                                    MSG = '307 = 2 x 153 + 1' ).
+
   ENDMETHOD.
 
+  METHOD HEADER_SUFFIX.
 
-  METHOD header_suffix.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    ls_info = letters( iv_times = 155 iv_header = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-suffix
-                                    exp = 5
-                                    msg = 'suffix for letters' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 1
-                                    msg = '155 + 5 = 160' ).
-    ls_info = letters( iv_times = 156 iv_header = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 2
-                                    msg = '156 + 5 > 160' ).
+    LS_INFO = LETTERS( IV_TIMES = 155 IV_HEADER = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-SUFFIX
+                                    EXP = 5
+                                    MSG = 'suffix for letters' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 1
+                                    MSG = '155 + 5 = 160' ).
+    LS_INFO = LETTERS( IV_TIMES = 156 IV_HEADER = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 2
+                                    MSG = '156 + 5 > 160' ).
+
   ENDMETHOD.
 
+  METHOD TURKISH_CHOOSES_TR.
 
-  METHOD turkish_chooses_tr.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_1 TYPE string.
-    DATA lv_2 TYPE string.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
+
+    DATA: LV_1    TYPE STRING,
+          LV_2    TYPE STRING,
+          LV_TEXT TYPE STRING.
 
     " Capital I with dot and s with cedilla: 2 + 2 characters
-    lv_1 = ltu_chars=>char( 304 ).
-    lv_2 = ltu_chars=>char( 351 ).
-    CONCATENATE lv_1 lv_2 INTO lv_text.
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-auto
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-turkish
-                                    msg = 'Turkish letters, TR' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-units
-                                    exp = 4
-                                    msg = 'shift letters count 2' ).
+    LV_1 = LTU_CHARS=>CHAR( 304 ).
+    LV_2 = LTU_CHARS=>CHAR( 351 ).
+    CONCATENATE LV_1 LV_2 INTO LV_TEXT.
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-AUTO
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-TURKISH
+                                    MSG = 'Turkish letters, TR' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-UNITS
+                                    EXP = 4
+                                    MSG = 'shift letters count 2' ).
+
   ENDMETHOD.
 
+  METHOD SOFT_TURKISH_LETTERS.
 
-  METHOD soft_turkish_letters.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_1 TYPE string.
-    DATA lv_2 TYPE string.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
+
+    DATA: LV_1    TYPE STRING,
+          LV_2    TYPE STRING,
+          LV_TEXT TYPE STRING.
 
     " o and u with umlaut are GSM letters: TR, but 1 each
-    lv_1 = ltu_chars=>char( 246 ).
-    lv_2 = ltu_chars=>char( 252 ).
-    CONCATENATE lv_1 lv_2 INTO lv_text.
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-auto
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-turkish
-                                    msg = 'still Turkish' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-units
-                                    exp = 2
-                                    msg = 'one each' ).
+    LV_1 = LTU_CHARS=>CHAR( 246 ).
+    LV_2 = LTU_CHARS=>CHAR( 252 ).
+    CONCATENATE LV_1 LV_2 INTO LV_TEXT.
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-AUTO
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-TURKISH
+                                    MSG = 'still Turkish' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-UNITS
+                                    EXP = 2
+                                    MSG = 'one each' ).
+
   ENDMETHOD.
 
+  METHOD EXTENSION_COUNTS_TWO.
 
-  METHOD extension_counts_two.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_euro TYPE string.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    lv_euro = ltu_chars=>char( 8364 ).
-    CONCATENATE `10 ` lv_euro ` [x]` INTO lv_text.
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-auto
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-gsm
-                                    msg = 'GSM extension' ).
+    DATA: LV_EURO TYPE STRING,
+          LV_TEXT TYPE STRING.
+
+    LV_EURO = LTU_CHARS=>CHAR( 8364 ).
+    CONCATENATE `10 ` LV_EURO ` [x]` INTO LV_TEXT.
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-AUTO
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-GSM
+                                    MSG = 'GSM extension' ).
     " "10 " 3, euro 2, " " 1, "[" 2, "x" 1, "]" 2
-    cl_aunit_assert=>assert_equals( act = ls_info-units
-                                    exp = 11
-                                    msg = 'extension counts 2' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-UNITS
+                                    EXP = 11
+                                    MSG = 'extension counts 2' ).
+
   ENDMETHOD.
 
+  METHOD EMOJI_CHOOSES_UNICODE.
 
-  METHOD emoji_chooses_unicode.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    lv_text = emoji_text( ).
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-auto
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-unicode
-                                    msg = 'emoji, Unicode' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-units
-                                    exp = 5
-                                    msg = 'code units' ).
-    ls_info = letters( iv_times    = 71
-                       iv_header   = `8500000000`
-                       iv_encoding = lif_sms=>encoding-unicode ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 2
-                                    msg = '71 Unicode = 2 parts' ).
+    DATA LV_TEXT TYPE STRING.
+
+    LV_TEXT = EMOJI_TEXT( ).
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-AUTO
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-UNICODE
+                                    MSG = 'emoji, Unicode' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-UNITS
+                                    EXP = 5
+                                    MSG = 'code units' ).
+    LS_INFO = LETTERS( IV_TIMES    = 71
+                       IV_HEADER   = `8500000000`
+                       IV_ENCODING = LIF_SMS=>ENCODING-UNICODE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 2
+                                    MSG = '71 Unicode = 2 parts' ).
+
   ENDMETHOD.
 
+  METHOD TR_REFUSES_EMOJI.
 
-  METHOD tr_refuses_emoji.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    lv_text = emoji_text( ).
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-turkish
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-ok
-                                    exp = abap_false
-                                    msg = 'TR cannot send emoji' ).
+    DATA LV_TEXT TYPE STRING.
+
+    LV_TEXT = EMOJI_TEXT( ).
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-TURKISH
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-OK
+                                    EXP = ABAP_FALSE
+                                    MSG = 'TR cannot send emoji' ).
+
   ENDMETHOD.
 
+  METHOD ASCII_CONVERTS.
 
-  METHOD ascii_converts.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
-    DATA lv_u TYPE string.
-    DATA lv_s TYPE string.
-    DATA lv_capital_i TYPE string.
-    DATA lv_dotless_i TYPE string.
-    DATA lv_g TYPE string.
-    DATA lv_text TYPE string.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
+
+    DATA: LV_U         TYPE STRING,
+          LV_S         TYPE STRING,
+          LV_CAPITAL_I TYPE STRING,
+          LV_DOTLESS_I TYPE STRING,
+          LV_G         TYPE STRING,
+          LV_TEXT      TYPE STRING.
 
     " "Gunes Isigi" written with Turkish letters
-    lv_u = ltu_chars=>char( 252 ).
-    lv_s = ltu_chars=>char( 351 ).
-    lv_capital_i = ltu_chars=>char( 304 ).
-    lv_dotless_i = ltu_chars=>char( 305 ).
-    lv_g = ltu_chars=>char( 287 ).
-    CONCATENATE `G` lv_u `ne` lv_s ` ` lv_capital_i lv_s lv_dotless_i
-                lv_g lv_dotless_i INTO lv_text.
-    ls_info = lcl_sms_text=>analyze(
-                iv_text     = lv_text
-                iv_encoding = lif_sms=>encoding-ascii
-                iv_header   = '8500000000' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-text
-                                    exp = `Gunes Isigi`
-                                    msg = 'Latin letters' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-encoding
-                                    exp = lif_sms=>encoding-gsm
-                                    msg = 'plain GSM after it' ).
+    LV_U = LTU_CHARS=>CHAR( 252 ).
+    LV_S = LTU_CHARS=>CHAR( 351 ).
+    LV_CAPITAL_I = LTU_CHARS=>CHAR( 304 ).
+    LV_DOTLESS_I = LTU_CHARS=>CHAR( 305 ).
+    LV_G = LTU_CHARS=>CHAR( 287 ).
+    CONCATENATE `G` LV_U `ne` LV_S ` ` LV_CAPITAL_I LV_S LV_DOTLESS_I
+                LV_G LV_DOTLESS_I
+      INTO LV_TEXT.
+    LS_INFO = LCL_SMS_TEXT=>ANALYZE(
+                IV_TEXT     = LV_TEXT
+                IV_ENCODING = LIF_SMS=>ENCODING-ASCII
+                IV_HEADER   = '8500000000' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-TEXT
+                                    EXP = `Gunes Isigi`
+                                    MSG = 'Latin letters' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-ENCODING
+                                    EXP = LIF_SMS=>ENCODING-GSM
+                                    MSG = 'plain GSM after it' ).
+
   ENDMETHOD.
 
+  METHOD TOO_LONG.
 
-  METHOD too_long.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    ls_info = letters( iv_times = 912 iv_header = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-ok
-                                    exp = abap_true
-                                    msg = '912 GSM characters fit' ).
-    cl_aunit_assert=>assert_equals( act = ls_info-parts
-                                    exp = 6
-                                    msg = 'in 6 parts' ).
-    ls_info = letters( iv_times = 913 iv_header = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-ok
-                                    exp = abap_false
-                                    msg = '913 do not' ).
+    LS_INFO = LETTERS( IV_TIMES = 912 IV_HEADER = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-OK
+                                    EXP = ABAP_TRUE
+                                    MSG = '912 GSM characters fit' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-PARTS
+                                    EXP = 6
+                                    MSG = 'in 6 parts' ).
+    LS_INFO = LETTERS( IV_TIMES = 913 IV_HEADER = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-OK
+                                    EXP = ABAP_FALSE
+                                    MSG = '913 do not' ).
+
   ENDMETHOD.
 
+  METHOD EMPTY_TEXT.
 
-  METHOD empty_text.
-    DATA ls_info TYPE lif_sms=>ty_text_info.
+    DATA LS_INFO TYPE LIF_SMS=>TY_TEXT_INFO.
 
-    ls_info = letters( iv_times = 0 iv_header = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_info-ok
-                                    exp = abap_false
-                                    msg = 'empty' ).
+    LS_INFO = LETTERS( IV_TIMES = 0 IV_HEADER = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_INFO-OK
+                                    EXP = ABAP_FALSE
+                                    MSG = 'empty' ).
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
-CLASS ltc_json DEFINITION FINAL FOR TESTING.
+CLASS LTC_JSON DEFINITION FINAL FOR TESTING.
   "#AU Risk_Level Harmless
   "#AU Duration Short
   PRIVATE SECTION.
-    METHODS reads_flat FOR TESTING RAISING lcx_sms.
-    METHODS reads_arrays FOR TESTING RAISING lcx_sms.
-    METHODS keeps_blanks_and_escapes FOR TESTING RAISING lcx_sms.
-    METHODS rejects_broken FOR TESTING.
-    METHODS escapes FOR TESTING.
+    METHODS READS_FLAT FOR TESTING RAISING LCX_SMS.
+    METHODS READS_ARRAYS FOR TESTING RAISING LCX_SMS.
+    METHODS KEEPS_BLANKS_AND_ESCAPES FOR TESTING RAISING LCX_SMS.
+    METHODS REJECTS_BROKEN FOR TESTING.
+    METHODS ESCAPES FOR TESTING.
 
-    METHODS assert_value
+    METHODS ASSERT_VALUE
       IMPORTING
-        it_values TYPE lcl_sms_json=>ty_values
-        iv_path   TYPE string
-        iv_exp    TYPE string.
+        IT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES
+        IV_PATH   TYPE STRING
+        IV_EXP    TYPE STRING.
 
-    METHODS assert_broken
+    METHODS ASSERT_BROKEN
       IMPORTING
-        iv_json TYPE string.
+        IV_JSON TYPE STRING.
 ENDCLASS.
 
+CLASS LTC_JSON IMPLEMENTATION.
 
-CLASS ltc_json IMPLEMENTATION.
+  METHOD ASSERT_VALUE.
 
-  METHOD assert_value.
-    DATA lv_act TYPE string.
+    DATA LV_ACT TYPE STRING.
 
-    lv_act = lcl_sms_json=>value_of( it_values = it_values
-                                     iv_path   = iv_path ).
-    cl_aunit_assert=>assert_equals( act = lv_act
-                                    exp = iv_exp
-                                    msg = iv_path ).
+    LV_ACT = LCL_SMS_JSON=>VALUE_OF( IT_VALUES = IT_VALUES
+                                     IV_PATH   = IV_PATH ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_ACT
+                                    EXP = IV_EXP
+                                    MSG = IV_PATH ).
+
   ENDMETHOD.
 
+  METHOD ASSERT_BROKEN.
 
-  METHOD assert_broken.
     TRY.
-        lcl_sms_json=>parse( iv_json ).
-        cl_aunit_assert=>fail( iv_json ).
-      CATCH lcx_sms.
+
+        LCL_SMS_JSON=>PARSE( IV_JSON ).
+        CL_AUNIT_ASSERT=>FAIL( IV_JSON ).
+
+      CATCH LCX_SMS.
+
         RETURN.
+
     ENDTRY.
+
   ENDMETHOD.
 
+  METHOD READS_FLAT.
 
-  METHOD reads_flat.
-    DATA lv_json TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
+
+    DATA LV_JSON TYPE STRING.
 
     CONCATENATE `{"code":"00","jobid":"17377215342605050417149344",`
-                `"description":"queued"}` INTO lv_json.
-    lt_values = lcl_sms_json=>parse( lv_json ).
-    assert_value( it_values = lt_values
-                  iv_path   = `jobid`
-                  iv_exp    = `17377215342605050417149344` ).
-    assert_value( it_values = lt_values
-                  iv_path   = `description`
-                  iv_exp    = `queued` ).
+                `"description":"queued"}`
+      INTO LV_JSON.
+    LT_VALUES = LCL_SMS_JSON=>PARSE( LV_JSON ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `jobid`
+                  IV_EXP    = `17377215342605050417149344` ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `description`
+                  IV_EXP    = `queued` ).
+
   ENDMETHOD.
 
+  METHOD READS_ARRAYS.
 
-  METHOD reads_arrays.
-    DATA lv_json TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA lv_has TYPE abap_bool.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
+
+    DATA: LV_JSON TYPE STRING,
+          LV_HAS  TYPE ABAP_BOOL.
 
     CONCATENATE `{ "code" : "00", "jobs" : [ {"jobid":"1","status":1},`
                 ` {"jobid":"2","status":"3","x":null,"y":true} ],`
-                ` "empty":[], "obj":{} }` INTO lv_json.
-    lt_values = lcl_sms_json=>parse( lv_json ).
-    assert_value( it_values = lt_values
-                  iv_path   = `jobs/1/status`
-                  iv_exp    = `1` ).
-    assert_value( it_values = lt_values
-                  iv_path   = `jobs/2/status`
-                  iv_exp    = `3` ).
-    assert_value( it_values = lt_values
-                  iv_path   = `jobs/2/y`
-                  iv_exp    = `true` ).
-    lv_has = lcl_sms_json=>has( it_values = lt_values
-                                iv_path   = `jobs/3/jobid` ).
-    cl_aunit_assert=>assert_equals( act = lv_has
-                                    exp = abap_false
-                                    msg = 'no third row' ).
+                ` "empty":[], "obj":{} }`
+      INTO LV_JSON.
+    LT_VALUES = LCL_SMS_JSON=>PARSE( LV_JSON ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `jobs/1/status`
+                  IV_EXP    = `1` ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `jobs/2/status`
+                  IV_EXP    = `3` ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `jobs/2/y`
+                  IV_EXP    = `true` ).
+    LV_HAS = LCL_SMS_JSON=>HAS( IT_VALUES = LT_VALUES
+                                IV_PATH   = `jobs/3/jobid` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_HAS
+                                    EXP = ABAP_FALSE
+                                    MSG = 'no third row' ).
+
   ENDMETHOD.
 
+  METHOD KEEPS_BLANKS_AND_ESCAPES.
 
-  METHOD keeps_blanks_and_escapes.
-    DATA lv_json TYPE string.
-    DATA lt_values TYPE lcl_sms_json=>ty_values.
-    DATA lv_capital_i TYPE string.
-    DATA lv_exp TYPE string.
+    DATA LT_VALUES TYPE LCL_SMS_JSON=>TY_VALUES.
+
+    DATA: LV_JSON      TYPE STRING,
+          LV_CAPITAL_I TYPE STRING,
+          LV_EXP       TYPE STRING.
 
     CONCATENATE `{"a":" x y ","b":"q\"\\n\\\"",`
-                `"c":"İ z"}` INTO lv_json.
-    lt_values = lcl_sms_json=>parse( lv_json ).
-    assert_value( it_values = lt_values
-                  iv_path   = `a`
-                  iv_exp    = ` x y ` ).
-    assert_value( it_values = lt_values
-                  iv_path   = `b`
-                  iv_exp    = `q"\n\"` ).
-    lv_capital_i = ltu_chars=>char( 304 ).
-    CONCATENATE lv_capital_i ` z` INTO lv_exp.
-    assert_value( it_values = lt_values
-                  iv_path   = `c`
-                  iv_exp    = lv_exp ).
+                `"c":"İ z"}`
+      INTO LV_JSON.
+    LT_VALUES = LCL_SMS_JSON=>PARSE( LV_JSON ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `a`
+                  IV_EXP    = ` x y ` ).
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `b`
+                  IV_EXP    = `q"\n\"` ).
+    LV_CAPITAL_I = LTU_CHARS=>CHAR( 304 ).
+    CONCATENATE LV_CAPITAL_I ` z` INTO LV_EXP.
+    ASSERT_VALUE( IT_VALUES = LT_VALUES
+                  IV_PATH   = `c`
+                  IV_EXP    = LV_EXP ).
+
   ENDMETHOD.
 
+  METHOD REJECTS_BROKEN.
 
-  METHOD rejects_broken.
-    assert_broken( `{"code":"00"` ).
-    assert_broken( `<html>` ).
-    assert_broken( `{"code" "00"}` ).
-    assert_broken( `{"a":"open}` ).
+    ASSERT_BROKEN( `{"code":"00"` ).
+    ASSERT_BROKEN( `<html>` ).
+    ASSERT_BROKEN( `{"code" "00"}` ).
+    ASSERT_BROKEN( `{"a":"open}` ).
+
   ENDMETHOD.
 
+  METHOD ESCAPES.
 
-  METHOD escapes.
-    DATA lv_text TYPE string.
-    DATA lv_act TYPE string.
+    DATA: LV_TEXT TYPE STRING,
+          LV_ACT  TYPE STRING.
 
-    CONCATENATE `a"b\c` cl_abap_char_utilities=>newline `d`
-                INTO lv_text.
-    lv_act = lcl_sms_json=>escape( lv_text ).
-    cl_aunit_assert=>assert_equals( act = lv_act
-                                    exp = `a\"b\\c\nd`
-                                    msg = 'escape' ).
+    CONCATENATE `a"b\c` CL_ABAP_CHAR_UTILITIES=>NEWLINE `d`
+      INTO LV_TEXT.
+    LV_ACT = LCL_SMS_JSON=>ESCAPE( LV_TEXT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_ACT
+                                    EXP = `a\"b\\c\nd`
+                                    MSG = 'escape' ).
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
-CLASS ltc_send DEFINITION FINAL FOR TESTING.
+CLASS LTC_SEND DEFINITION FINAL FOR TESTING.
   "#AU Risk_Level Harmless
   "#AU Duration Short
   PRIVATE SECTION.
-    DATA mo_backend TYPE REF TO ltd_backend.
-    DATA mo_cut TYPE REF TO lcl_sms_netgsm.
-    DATA mt_numbers TYPE string_table.
+    DATA MO_BACKEND TYPE REF TO LTD_BACKEND.
+    DATA MO_CUT TYPE REF TO LCL_SMS_NETGSM.
+    DATA MT_NUMBERS TYPE STRING_TABLE.
 
-    METHODS setup.
-    METHODS dry_run_calls_nothing FOR TESTING.
-    METHODS sends_and_reads_jobid FOR TESTING.
-    METHODS body_has_netgsm_fields FOR TESTING.
-    METHODS turkish_body FOR TESTING.
-    METHODS netgsm_error_codes FOR TESTING.
-    METHODS no_authority FOR TESTING.
-    METHODS no_destination FOR TESTING.
-    METHODS no_valid_number FOR TESTING.
-    METHODS bad_header FOR TESTING.
-    METHODS no_answer_is_unsure FOR TESTING.
-    METHODS untrusted_is_not_sent FOR TESTING.
-    METHODS http_error FOR TESTING.
-    METHODS plain_text_answer FOR TESTING.
-    METHODS report_reads_jobs FOR TESTING.
-    METHODS report_limits FOR TESTING.
-    METHODS lists_headers FOR TESTING.
+    METHODS SETUP.
+    METHODS DRY_RUN_CALLS_NOTHING FOR TESTING.
+    METHODS SENDS_AND_READS_JOBID FOR TESTING.
+    METHODS BODY_HAS_NETGSM_FIELDS FOR TESTING.
+    METHODS TURKISH_BODY FOR TESTING.
+    METHODS NETGSM_ERROR_CODES FOR TESTING.
+    METHODS NO_AUTHORITY FOR TESTING.
+    METHODS NO_DESTINATION FOR TESTING.
+    METHODS NO_VALID_NUMBER FOR TESTING.
+    METHODS BAD_HEADER FOR TESTING.
+    METHODS NO_ANSWER_IS_UNSURE FOR TESTING.
+    METHODS UNTRUSTED_IS_NOT_SENT FOR TESTING.
+    METHODS HTTP_ERROR FOR TESTING.
+    METHODS PLAIN_TEXT_ANSWER FOR TESTING.
+    METHODS REPORT_READS_JOBS FOR TESTING.
+    METHODS REPORT_LIMITS FOR TESTING.
+    METHODS LISTS_HEADERS FOR TESTING.
 
-    METHODS send
+    METHODS SEND
       IMPORTING
-        iv_dry_run       TYPE abap_bool DEFAULT abap_false
-        iv_header        TYPE string DEFAULT `FIRMA`
-        iv_text          TYPE string DEFAULT `Job ZFI_CLOSE failed`
+        IV_DRY_RUN       TYPE ABAP_BOOL DEFAULT ABAP_FALSE
+        IV_HEADER        TYPE STRING DEFAULT `FIRMA`
+        IV_TEXT          TYPE STRING DEFAULT `Job ZFI_CLOSE failed`
       RETURNING
-        value(rs_result) TYPE lif_sms=>ty_result.
+        VALUE(RS_RESULT) TYPE LIF_SMS=>TY_RESULT.
 
-    METHODS assert_contains
+    METHODS ASSERT_CONTAINS
       IMPORTING
-        iv_text TYPE string
-        iv_part TYPE string.
+        IV_TEXT TYPE STRING
+        IV_PART TYPE STRING.
 
-    METHODS assert_lacks
+    METHODS ASSERT_LACKS
       IMPORTING
-        iv_text TYPE string
-        iv_part TYPE string.
+        IV_TEXT TYPE STRING
+        IV_PART TYPE STRING.
 ENDCLASS.
 
+CLASS LTC_SEND IMPLEMENTATION.
 
-CLASS ltc_send IMPLEMENTATION.
+  METHOD SETUP.
 
-  METHOD setup.
-    CREATE OBJECT mo_backend.
-    CREATE OBJECT mo_cut
+    CREATE OBJECT MO_BACKEND.
+    CREATE OBJECT MO_CUT
       EXPORTING
-        iv_destination     = 'ZCHE_TEST'
-        iv_ext_destination = 'ZCHE_TEST_EXT'
-        io_backend         = mo_backend.
-    CLEAR mt_numbers.
-    APPEND `0500 111 22 33` TO mt_numbers.
-    APPEND `0500 111 22 44` TO mt_numbers.
-    APPEND `0212 000 00 00` TO mt_numbers.
+        IV_DESTINATION     = 'ZCHE_TEST'
+        IV_EXT_DESTINATION = 'ZCHE_TEST_EXT'
+        IO_BACKEND         = MO_BACKEND.
+    CLEAR MT_NUMBERS.
+    APPEND `0500 111 22 33` TO MT_NUMBERS.
+    APPEND `0500 111 22 44` TO MT_NUMBERS.
+    APPEND `0212 000 00 00` TO MT_NUMBERS.
+
   ENDMETHOD.
 
+  METHOD SEND.
 
-  METHOD send.
-    rs_result = mo_cut->send( it_numbers = mt_numbers
-                              iv_text    = iv_text
-                              iv_header  = iv_header
-                              iv_dry_run = iv_dry_run ).
+    RS_RESULT = MO_CUT->SEND( IT_NUMBERS = MT_NUMBERS
+                              IV_TEXT    = IV_TEXT
+                              IV_HEADER  = IV_HEADER
+                              IV_DRY_RUN = IV_DRY_RUN ).
+
   ENDMETHOD.
 
+  METHOD ASSERT_CONTAINS.
 
-  METHOD assert_contains.
-    IF iv_text NS iv_part.
-      cl_aunit_assert=>fail( iv_part ).
+    IF IV_TEXT NS IV_PART.
+
+      CL_AUNIT_ASSERT=>FAIL( IV_PART ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ASSERT_LACKS.
 
-  METHOD assert_lacks.
-    IF iv_text CS iv_part.
-      cl_aunit_assert=>fail( iv_part ).
+    IF IV_TEXT CS IV_PART.
+
+      CL_AUNIT_ASSERT=>FAIL( IV_PART ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD DRY_RUN_CALLS_NOTHING.
 
-  METHOD dry_run_calls_nothing.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    ls_result = send( iv_dry_run = abap_true ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-dry_run
-                                    msg = 'dry run' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-valid
-                                    exp = 2
-                                    msg = 'two valid numbers' ).
+    LS_RESULT = SEND( IV_DRY_RUN = ABAP_TRUE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-DRY_RUN
+                                    MSG = 'dry run' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-VALID
+                                    EXP = 2
+                                    MSG = 'two valid numbers' ).
     " The preview shows masked numbers only
-    assert_lacks( iv_text = ls_result-request iv_part = `5001112233` ).
-    assert_contains( iv_text = ls_result-request
-                     iv_part = `"no":"5** *** ** 33"` ).
+    ASSERT_LACKS( IV_TEXT = LS_RESULT-REQUEST IV_PART = `5001112233` ).
+    ASSERT_CONTAINS( IV_TEXT = LS_RESULT-REQUEST
+                     IV_PART = `"no":"5** *** ** 33"` ).
+
   ENDMETHOD.
 
+  METHOD SENDS_AND_READS_JOBID.
 
-  METHOD sends_and_reads_jobid.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->reply =
+    MO_BACKEND->REPLY =
       `{"code":"00","jobid":"1737721534","description":"queued"}`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = `00`
-                                    msg = 'code' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-sent
-                                    exp = abap_true
-                                    msg = 'sent' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-jobid
-                                    exp = `1737721534`
-                                    msg = 'jobid' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 1
-                                    msg = 'one call, no retry' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_method
-                                    exp = `POST`
-                                    msg = 'method' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/send`
-                                    msg = 'path' ).
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = `00`
+                                    MSG = 'code' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-SENT
+                                    EXP = ABAP_TRUE
+                                    MSG = 'sent' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-JOBID
+                                    EXP = `1737721534`
+                                    MSG = 'jobid' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 1
+                                    MSG = 'one call, no retry' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_METHOD
+                                    EXP = `POST`
+                                    MSG = 'method' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/send`
+                                    MSG = 'path' ).
+
   ENDMETHOD.
 
+  METHOD BODY_HAS_NETGSM_FIELDS.
 
-  METHOD body_has_netgsm_fields.
-    DATA lv_body TYPE string.
+    DATA LV_BODY TYPE STRING.
 
-    mo_backend->reply = `{"code":"00","jobid":"1"}`.
-    send( ).
-    lv_body = mo_backend->last_body.
-    assert_contains( iv_text = lv_body
-                     iv_part = `{"msgheader":"FIRMA",` ).
-    assert_contains( iv_text = lv_body
-                     iv_part = `"iysfilter":"0"` ).
-    assert_contains(
-      iv_text = lv_body
-      iv_part = `{"msg":"Job ZFI_CLOSE failed","no":"5001112233"}` ).
-    assert_contains( iv_text = lv_body
-                     iv_part = `"no":"5001112244"` ).
+    MO_BACKEND->REPLY = `{"code":"00","jobid":"1"}`.
+    SEND( ).
+    LV_BODY = MO_BACKEND->LAST_BODY.
+    ASSERT_CONTAINS( IV_TEXT = LV_BODY
+                     IV_PART = `{"msgheader":"FIRMA",` ).
+    ASSERT_CONTAINS( IV_TEXT = LV_BODY
+                     IV_PART = `"iysfilter":"0"` ).
+    ASSERT_CONTAINS(
+      IV_TEXT = LV_BODY
+      IV_PART = `{"msg":"Job ZFI_CLOSE failed","no":"5001112233"}` ).
+    ASSERT_CONTAINS( IV_TEXT = LV_BODY
+                     IV_PART = `"no":"5001112244"` ).
     " Rejected number not sent; plain GSM needs no encoding field
-    assert_lacks( iv_text = lv_body iv_part = `0212` ).
-    assert_lacks( iv_text = lv_body iv_part = `"encoding"` ).
+    ASSERT_LACKS( IV_TEXT = LV_BODY IV_PART = `0212` ).
+    ASSERT_LACKS( IV_TEXT = LV_BODY IV_PART = `"encoding"` ).
+
   ENDMETHOD.
 
+  METHOD TURKISH_BODY.
 
-  METHOD turkish_body.
-    DATA lv_s TYPE string.
-    DATA lv_text TYPE string.
+    DATA: LV_S    TYPE STRING,
+          LV_TEXT TYPE STRING.
 
-    lv_s = ltu_chars=>char( 351 ).
-    CONCATENATE `Ba` lv_s `ar` cl_abap_char_utilities=>newline `"ok"`
-                INTO lv_text.
-    mo_backend->reply = `{"code":"00","jobid":"1"}`.
-    send( iv_text = lv_text ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"encoding":"TR"` ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `\n\"ok\"` ).
+    LV_S = LTU_CHARS=>CHAR( 351 ).
+    CONCATENATE `Ba` LV_S `ar` CL_ABAP_CHAR_UTILITIES=>NEWLINE `"ok"`
+      INTO LV_TEXT.
+    MO_BACKEND->REPLY = `{"code":"00","jobid":"1"}`.
+    SEND( IV_TEXT = LV_TEXT ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"encoding":"TR"` ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `\n\"ok\"` ).
+
   ENDMETHOD.
 
+  METHOD NETGSM_ERROR_CODES.
 
-  METHOD netgsm_error_codes.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lv_exp TYPE string.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->reply = `{"code":"30","jobid":null,"description":""}`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-sent
-                                    exp = abap_false
-                                    msg = '30 is not sent' ).
-    lv_exp = lcl_text=>get( 'C30' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-message
-                                    exp = lv_exp
-                                    msg = '30 explained' ).
-    mo_backend->reply = `{"code":"40"}`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = `40`
-                                    msg = '40' ).
-    mo_backend->reply = `{"code":"85"}`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-sent
-                                    exp = abap_false
-                                    msg = '85 is not sent' ).
+    DATA LV_EXP TYPE STRING.
+
+    MO_BACKEND->REPLY = `{"code":"30","jobid":null,"description":""}`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-SENT
+                                    EXP = ABAP_FALSE
+                                    MSG = '30 is not sent' ).
+    LV_EXP = LCL_TEXT=>GET( 'C30' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-MESSAGE
+                                    EXP = LV_EXP
+                                    MSG = '30 explained' ).
+    MO_BACKEND->REPLY = `{"code":"40"}`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = `40`
+                                    MSG = '40' ).
+    MO_BACKEND->REPLY = `{"code":"85"}`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-SENT
+                                    EXP = ABAP_FALSE
+                                    MSG = '85 is not sent' ).
+
   ENDMETHOD.
 
+  METHOD NO_AUTHORITY.
 
-  METHOD no_authority.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->authorized = abap_false.
-    ls_result = send( iv_dry_run = abap_true ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_auth
-                                    msg = 'preview checks too' ).
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_auth
-                                    msg = 'no authority' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    MO_BACKEND->AUTHORIZED = ABAP_FALSE.
+    LS_RESULT = SEND( IV_DRY_RUN = ABAP_TRUE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_AUTH
+                                    MSG = 'preview checks too' ).
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_AUTH
+                                    MSG = 'no authority' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD NO_DESTINATION.
 
-  METHOD no_destination.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    CLEAR mo_backend->dest_type.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_dest
-                                    msg = 'missing' ).
-    mo_backend->dest_type = '3'.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_dest
-                                    msg = 'wrong type' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    CLEAR MO_BACKEND->DEST_TYPE.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_DEST
+                                    MSG = 'missing' ).
+    MO_BACKEND->DEST_TYPE = '3'.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_DEST
+                                    MSG = 'wrong type' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD NO_VALID_NUMBER.
 
-  METHOD no_valid_number.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    CLEAR mt_numbers.
-    APPEND `0212 000 00 00` TO mt_numbers.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_number
-                                    msg = 'no valid number' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    CLEAR MT_NUMBERS.
+    APPEND `0212 000 00 00` TO MT_NUMBERS.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_NUMBER
+                                    MSG = 'no valid number' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD BAD_HEADER.
 
-  METHOD bad_header.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    ls_result = send( iv_header = `` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'no header' ).
-    ls_result = send( iv_header = `AB` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'too short' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    LS_RESULT = SEND( IV_HEADER = `` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'no header' ).
+    LS_RESULT = SEND( IV_HEADER = `AB` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'too short' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD NO_ANSWER_IS_UNSURE.
 
-  METHOD no_answer_is_unsure.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lv_unsure TYPE string.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->no_answer = abap_true.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_conn
-                                    msg = 'no connection' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-sent
-                                    exp = abap_false
-                                    msg = 'not marked as sent' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 1
-                                    msg = 'no retry' ).
-    lv_unsure = lcl_text=>get( 'UNSURE' ).
-    assert_contains( iv_text = ls_result-message iv_part = lv_unsure ).
+    DATA LV_UNSURE TYPE STRING.
+
+    MO_BACKEND->NO_ANSWER = ABAP_TRUE.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_CONN
+                                    MSG = 'no connection' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-SENT
+                                    EXP = ABAP_FALSE
+                                    MSG = 'not marked as sent' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 1
+                                    MSG = 'no retry' ).
+    LV_UNSURE = LCL_TEXT=>GET( 'UNSURE' ).
+    ASSERT_CONTAINS( IV_TEXT = LS_RESULT-MESSAGE IV_PART = LV_UNSURE ).
+
   ENDMETHOD.
 
+  METHOD UNTRUSTED_IS_NOT_SENT.
 
-  METHOD untrusted_is_not_sent.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lv_unsure TYPE string.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->no_answer = abap_true.
-    mo_backend->no_answer_code = lif_sms=>code-no_trust.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-no_trust
-                                    msg = 'certificate' ).
+    DATA LV_UNSURE TYPE STRING.
+
+    MO_BACKEND->NO_ANSWER = ABAP_TRUE.
+    MO_BACKEND->NO_ANSWER_CODE = LIF_SMS=>CODE-NO_TRUST.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-NO_TRUST
+                                    MSG = 'certificate' ).
     " The handshake failed, so the program is sure nothing went out
-    lv_unsure = lcl_text=>get( 'UNSURE' ).
-    assert_lacks( iv_text = ls_result-message iv_part = lv_unsure ).
+    LV_UNSURE = LCL_TEXT=>GET( 'UNSURE' ).
+    ASSERT_LACKS( IV_TEXT = LS_RESULT-MESSAGE IV_PART = LV_UNSURE ).
+
   ENDMETHOD.
 
+  METHOD HTTP_ERROR.
 
-  METHOD http_error.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->status = 406.
-    mo_backend->reply = `Not Acceptable`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-http
-                                    msg = 'HTTP status' ).
-    assert_contains( iv_text = ls_result-message iv_part = `406` ).
+    MO_BACKEND->STATUS = 406.
+    MO_BACKEND->REPLY = `Not Acceptable`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-HTTP
+                                    MSG = 'HTTP status' ).
+    ASSERT_CONTAINS( IV_TEXT = LS_RESULT-MESSAGE IV_PART = `406` ).
     " A code in the body wins over the HTTP status
-    mo_backend->reply = `{"code":"30","description":"x"}`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = `30`
-                                    msg = '406 with a code' ).
+    MO_BACKEND->REPLY = `{"code":"30","description":"x"}`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = `30`
+                                    MSG = '406 with a code' ).
+
   ENDMETHOD.
 
+  METHOD PLAIN_TEXT_ANSWER.
 
-  METHOD plain_text_answer.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->reply = `30`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = `30`
-                                    msg = 'plain code' ).
-    mo_backend->reply = `<html>error</html>`.
-    ls_result = send( ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_reply
-                                    msg = 'unreadable' ).
+    MO_BACKEND->REPLY = `30`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = `30`
+                                    MSG = 'plain code' ).
+    MO_BACKEND->REPLY = `<html>error</html>`.
+    LS_RESULT = SEND( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_REPLY
+                                    MSG = 'unreadable' ).
+
   ENDMETHOD.
 
+  METHOD REPORT_READS_JOBS.
 
-  METHOD report_reads_jobs.
-    DATA lt_jobids TYPE string_table.
-    DATA ls_report TYPE lif_sms=>ty_report.
-    DATA ls_line TYPE lif_sms=>ty_report_line.
-    DATA lv_count TYPE i.
-    DATA lv_exp TYPE string.
+    DATA LT_JOBIDS TYPE STRING_TABLE.
 
-    APPEND `1737721534` TO lt_jobids.
+    DATA: LS_REPORT TYPE LIF_SMS=>TY_REPORT,
+          LS_LINE   TYPE LIF_SMS=>TY_REPORT_LINE.
+
+    DATA: LV_COUNT TYPE I,
+          LV_EXP   TYPE STRING.
+
+    APPEND `1737721534` TO LT_JOBIDS.
     CONCATENATE
       `{"code":"00","jobs":[`
       `{"jobid":"1737721534","number":"905001112233","status":"1",`
@@ -6603,492 +8274,537 @@ CLASS ltc_send IMPLEMENTATION.
       `"errorCode":"0"},`
       `{"jobid":"1737721534","number":"905001112244","status":"2",`
       `"operator":"10","errorCode":"102"}],"description":"success"}`
-      INTO mo_backend->reply.
-    ls_report = mo_cut->report( it_jobids = lt_jobids ).
+      INTO MO_BACKEND->REPLY.
+    LS_REPORT = MO_CUT->REPORT( IT_JOBIDS = LT_JOBIDS ).
 
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_body
-                                    exp = `{"jobids":["1737721534"]}`
-                                    msg = 'request' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/report`
-                                    msg = 'path' ).
-    DESCRIBE TABLE ls_report-lines LINES lv_count.
-    cl_aunit_assert=>assert_equals( act = lv_count
-                                    exp = 2
-                                    msg = 'two lines' ).
-    READ TABLE ls_report-lines INTO ls_line INDEX 1.
-    lv_exp = lcl_text=>get( 'S1' ).
-    cl_aunit_assert=>assert_equals( act = ls_line-status_text
-                                    exp = lv_exp
-                                    msg = 'delivered' ).
-    cl_aunit_assert=>assert_equals( act = ls_line-operator
-                                    exp = `Turkcell`
-                                    msg = 'operator' ).
-    assert_lacks( iv_text = ls_line-number iv_part = `5001112233` ).
-    READ TABLE ls_report-lines INTO ls_line INDEX 2.
-    lv_exp = lcl_text=>get( 'E102' ).
-    cl_aunit_assert=>assert_equals( act = ls_line-error_text
-                                    exp = lv_exp
-                                    msg = 'operator error' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_BODY
+                                    EXP = `{"jobids":["1737721534"]}`
+                                    MSG = 'request' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/report`
+                                    MSG = 'path' ).
+    DESCRIBE TABLE LS_REPORT-LINES LINES LV_COUNT.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_COUNT
+                                    EXP = 2
+                                    MSG = 'two lines' ).
+    CLEAR LS_LINE.
+    READ TABLE LS_REPORT-LINES
+         INTO LS_LINE
+         INDEX 1.
+    LV_EXP = LCL_TEXT=>GET( 'S1' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-STATUS_TEXT
+                                    EXP = LV_EXP
+                                    MSG = 'delivered' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-OPERATOR
+                                    EXP = `Turkcell`
+                                    MSG = 'operator' ).
+    ASSERT_LACKS( IV_TEXT = LS_LINE-NUMBER IV_PART = `5001112233` ).
+    CLEAR LS_LINE.
+    READ TABLE LS_REPORT-LINES
+         INTO LS_LINE
+         INDEX 2.
+    LV_EXP = LCL_TEXT=>GET( 'E102' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-ERROR_TEXT
+                                    EXP = LV_EXP
+                                    MSG = 'operator error' ).
+
   ENDMETHOD.
 
+  METHOD REPORT_LIMITS.
 
-  METHOD report_limits.
-    DATA lt_jobids TYPE string_table.
-    DATA ls_report TYPE lif_sms=>ty_report.
+    DATA LT_JOBIDS TYPE STRING_TABLE.
 
-    ls_report = mo_cut->report( it_jobids = lt_jobids ).
-    cl_aunit_assert=>assert_equals( act = ls_report-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'none' ).
+    DATA LS_REPORT TYPE LIF_SMS=>TY_REPORT.
+
+    LS_REPORT = MO_CUT->REPORT( IT_JOBIDS = LT_JOBIDS ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_REPORT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'none' ).
     DO 51 TIMES.
-      APPEND `1` TO lt_jobids.
+
+      APPEND `1` TO LT_JOBIDS.
+
     ENDDO.
-    ls_report = mo_cut->report( it_jobids = lt_jobids ).
-    cl_aunit_assert=>assert_equals( act = ls_report-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'too many' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    LS_REPORT = MO_CUT->REPORT( IT_JOBIDS = LT_JOBIDS ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_REPORT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'too many' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD LISTS_HEADERS.
 
-  METHOD lists_headers.
-    DATA ls_headers TYPE lif_sms=>ty_headers.
-    DATA lv_count TYPE i.
+    DATA LS_HEADERS TYPE LIF_SMS=>TY_HEADERS.
 
-    mo_backend->reply = `{"code":"00","msgheaders":["FIRMA","FIRMA2"]}`.
-    ls_headers = mo_cut->headers( ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_method
-                                    exp = `GET`
-                                    msg = 'GET' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/msgheader`
-                                    msg = 'path' ).
-    DESCRIBE TABLE ls_headers-names LINES lv_count.
-    cl_aunit_assert=>assert_equals( act = lv_count
-                                    exp = 2
-                                    msg = 'two names' ).
+    DATA LV_COUNT TYPE I.
+
+    MO_BACKEND->REPLY = `{"code":"00","msgheaders":["FIRMA","FIRMA2"]}`.
+    LS_HEADERS = MO_CUT->HEADERS( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_METHOD
+                                    EXP = `GET`
+                                    MSG = 'GET' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/msgheader`
+                                    MSG = 'path' ).
+    DESCRIBE TABLE LS_HEADERS-NAMES LINES LV_COUNT.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_COUNT
+                                    EXP = 2
+                                    MSG = 'two names' ).
+
   ENDMETHOD.
 
 ENDCLASS.
 
-
-CLASS ltc_services DEFINITION FINAL FOR TESTING.
+CLASS LTC_SERVICES DEFINITION FINAL FOR TESTING.
   "#AU Risk_Level Harmless
   "#AU Duration Short
   PRIVATE SECTION.
-    DATA mo_backend TYPE REF TO ltd_backend.
-    DATA mo_cut TYPE REF TO lcl_sms_netgsm.
-    DATA mt_numbers TYPE string_table.
+    DATA MO_BACKEND TYPE REF TO LTD_BACKEND.
+    DATA MO_CUT TYPE REF TO LCL_SMS_NETGSM.
+    DATA MT_NUMBERS TYPE STRING_TABLE.
 
-    METHODS setup.
-    METHODS schedule_and_reference FOR TESTING.
-    METHODS schedule_order FOR TESTING.
-    METHODS otp_request FOR TESTING.
-    METHODS otp_rules FOR TESTING.
-    METHODS otp_codes FOR TESTING.
-    METHODS otp_output_is_private FOR TESTING.
-    METHODS template_request FOR TESTING.
-    METHODS template_checks FOR TESTING.
-    METHODS template_values FOR TESTING.
-    METHODS cancel_job FOR TESTING.
-    METHODS report_by_dates FOR TESTING.
-    METHODS statistics FOR TESTING.
-    METHODS inbox_messages FOR TESTING.
-    METHODS template_list FOR TESTING.
-    METHODS netgsm_length FOR TESTING.
-    METHODS helpers FOR TESTING.
+    METHODS SETUP.
+    METHODS SCHEDULE_AND_REFERENCE FOR TESTING.
+    METHODS SCHEDULE_ORDER FOR TESTING.
+    METHODS OTP_REQUEST FOR TESTING.
+    METHODS OTP_RULES FOR TESTING.
+    METHODS OTP_CODES FOR TESTING.
+    METHODS OTP_OUTPUT_IS_PRIVATE FOR TESTING.
+    METHODS TEMPLATE_REQUEST FOR TESTING.
+    METHODS TEMPLATE_CHECKS FOR TESTING.
+    METHODS TEMPLATE_VALUES FOR TESTING.
+    METHODS CANCEL_JOB FOR TESTING.
+    METHODS REPORT_BY_DATES FOR TESTING.
+    METHODS STATISTICS FOR TESTING.
+    METHODS INBOX_MESSAGES FOR TESTING.
+    METHODS TEMPLATE_LIST FOR TESTING.
+    METHODS NETGSM_LENGTH FOR TESTING.
+    METHODS HELPERS FOR TESTING.
 
-    METHODS assert_contains
+    METHODS ASSERT_CONTAINS
       IMPORTING
-        iv_text TYPE string
-        iv_part TYPE string.
+        IV_TEXT TYPE STRING
+        IV_PART TYPE STRING.
 
-    METHODS assert_text
+    METHODS ASSERT_TEXT
       IMPORTING
-        iv_act TYPE string
-        iv_key TYPE string
-        iv_1   TYPE string OPTIONAL.
+        IV_ACT TYPE STRING
+        IV_KEY TYPE STRING
+        IV_1   TYPE STRING OPTIONAL.
 ENDCLASS.
 
+CLASS LTC_SERVICES IMPLEMENTATION.
 
-CLASS ltc_services IMPLEMENTATION.
+  METHOD SETUP.
 
-  METHOD setup.
-    CREATE OBJECT mo_backend.
-    CREATE OBJECT mo_cut
+    CREATE OBJECT MO_BACKEND.
+    CREATE OBJECT MO_CUT
       EXPORTING
-        iv_destination     = 'ZCHE_TEST'
-        iv_ext_destination = 'ZCHE_TEST_EXT'
-        io_backend         = mo_backend.
-    CLEAR mt_numbers.
-    APPEND `0500 111 22 33` TO mt_numbers.
+        IV_DESTINATION     = 'ZCHE_TEST'
+        IV_EXT_DESTINATION = 'ZCHE_TEST_EXT'
+        IO_BACKEND         = MO_BACKEND.
+    CLEAR MT_NUMBERS.
+    APPEND `0500 111 22 33` TO MT_NUMBERS.
+
   ENDMETHOD.
 
+  METHOD ASSERT_CONTAINS.
 
-  METHOD assert_contains.
-    IF iv_text NS iv_part.
-      cl_aunit_assert=>fail( iv_part ).
+    IF IV_TEXT NS IV_PART.
+
+      CL_AUNIT_ASSERT=>FAIL( IV_PART ).
+
     ENDIF.
+
   ENDMETHOD.
 
+  METHOD ASSERT_TEXT.
 
-  METHOD assert_text.
-    DATA lv_exp TYPE string.
+    DATA LV_EXP TYPE STRING.
 
-    lv_exp = lcl_text=>get( iv_key = iv_key iv_1 = iv_1 ).
-    cl_aunit_assert=>assert_equals( act = iv_act
-                                    exp = lv_exp
-                                    msg = iv_key ).
+    LV_EXP = LCL_TEXT=>GET( IV_KEY = IV_KEY IV_1 = IV_1 ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = IV_ACT
+                                    EXP = LV_EXP
+                                    MSG = IV_KEY ).
+
   ENDMETHOD.
 
+  METHOD SCHEDULE_AND_REFERENCE.
 
-  METHOD schedule_and_reference.
-    DATA ls_schedule TYPE lif_sms=>ty_schedule.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA: LS_SCHEDULE TYPE LIF_SMS=>TY_SCHEDULE,
+          LS_RESULT   TYPE LIF_SMS=>TY_RESULT.
 
-    ls_schedule-start_date = '20261108'.
-    ls_schedule-start_time = '093000'.
-    ls_schedule-stop_date = '20261108'.
-    ls_schedule-stop_time = '180000'.
-    mo_backend->reply = `{"code":"00","jobid":"77"}`.
-    ls_result = mo_cut->send( it_numbers   = mt_numbers
-                              iv_text      = `Toplanti 10:00`
-                              iv_header    = `FIRMA`
-                              is_schedule  = ls_schedule
-                              iv_reference = `SAP-4711`
-                              iv_dry_run   = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-jobid
-                                    exp = `77`
-                                    msg = 'job ID' ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"startdate":"081120260930"` ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `,"stopdate":"081120261800"` ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"referansID":"SAP-4711"` ).
+    LS_SCHEDULE-START_DATE = '20261108'.
+    LS_SCHEDULE-START_TIME = '093000'.
+    LS_SCHEDULE-STOP_DATE = '20261108'.
+    LS_SCHEDULE-STOP_TIME = '180000'.
+    MO_BACKEND->REPLY = `{"code":"00","jobid":"77"}`.
+    LS_RESULT = MO_CUT->SEND( IT_NUMBERS   = MT_NUMBERS
+                              IV_TEXT      = `Toplanti 10:00`
+                              IV_HEADER    = `FIRMA`
+                              IS_SCHEDULE  = LS_SCHEDULE
+                              IV_REFERENCE = `SAP-4711`
+                              IV_DRY_RUN   = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-JOBID
+                                    EXP = `77`
+                                    MSG = 'job ID' ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"startdate":"081120260930"` ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `,"stopdate":"081120261800"` ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"referansID":"SAP-4711"` ).
+
   ENDMETHOD.
 
+  METHOD SCHEDULE_ORDER.
 
-  METHOD schedule_order.
-    DATA ls_schedule TYPE lif_sms=>ty_schedule.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA: LS_SCHEDULE TYPE LIF_SMS=>TY_SCHEDULE,
+          LS_RESULT   TYPE LIF_SMS=>TY_RESULT.
 
-    ls_schedule-start_date = '20261108'.
-    ls_schedule-start_time = '093000'.
-    ls_schedule-stop_date = '20261108'.
-    ls_schedule-stop_time = '080000'.
-    ls_result = mo_cut->send( it_numbers  = mt_numbers
-                              iv_text     = `x`
-                              iv_header   = `FIRMA`
-                              is_schedule = ls_schedule
-                              iv_dry_run  = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'stop before start' ).
-    CLEAR ls_schedule.
-    ls_schedule-stop_date = '20261108'.
-    ls_result = mo_cut->send( it_numbers  = mt_numbers
-                              iv_text     = `x`
-                              iv_header   = `FIRMA`
-                              is_schedule = ls_schedule
-                              iv_dry_run  = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'stop without start' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    LS_SCHEDULE-START_DATE = '20261108'.
+    LS_SCHEDULE-START_TIME = '093000'.
+    LS_SCHEDULE-STOP_DATE = '20261108'.
+    LS_SCHEDULE-STOP_TIME = '080000'.
+    LS_RESULT = MO_CUT->SEND( IT_NUMBERS  = MT_NUMBERS
+                              IV_TEXT     = `x`
+                              IV_HEADER   = `FIRMA`
+                              IS_SCHEDULE = LS_SCHEDULE
+                              IV_DRY_RUN  = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'stop before start' ).
+    CLEAR LS_SCHEDULE.
+    LS_SCHEDULE-STOP_DATE = '20261108'.
+    LS_RESULT = MO_CUT->SEND( IT_NUMBERS  = MT_NUMBERS
+                              IV_TEXT     = `x`
+                              IV_HEADER   = `FIRMA`
+                              IS_SCHEDULE = LS_SCHEDULE
+                              IV_DRY_RUN  = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'stop without start' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD OTP_REQUEST.
 
-  METHOD otp_request.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lv_exp TYPE string.
-    DATA lv_text TYPE string.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    lv_text = ltu_chars=>char( 351 ).
-    CONCATENATE lv_text `ifre: 123456` INTO lv_text.
-    mo_backend->reply = `{"jobid":"88","code":"00","description":"x"}`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = lv_text
-                                  iv_ascii   = abap_true
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-sent
-                                    exp = abap_true
-                                    msg = 'sent' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/otp`
-                                    msg = 'path' ).
+    DATA: LV_EXP  TYPE STRING,
+          LV_TEXT TYPE STRING.
+
+    LV_TEXT = LTU_CHARS=>CHAR( 351 ).
+    CONCATENATE LV_TEXT `ifre: 123456` INTO LV_TEXT.
+    MO_BACKEND->REPLY = `{"jobid":"88","code":"00","description":"x"}`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = LV_TEXT
+                                  IV_ASCII   = ABAP_TRUE
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-SENT
+                                    EXP = ABAP_TRUE
+                                    MSG = 'sent' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/otp`
+                                    MSG = 'path' ).
     CONCATENATE `{"msgheader":"FIRMA","msg":"sifre: 123456",`
-                `"no":"5001112233"}` INTO lv_exp.
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_body
-                                    exp = lv_exp
-                                    msg = 'body' ).
-    cl_aunit_assert=>assert_equals( act = ls_result-text_info-parts
-                                    exp = 1
-                                    msg = 'one part' ).
-    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
-    cl_aunit_assert=>assert_equals( act = ls_result-jobid exp = `88` ).
+                `"no":"5001112233"}`
+      INTO LV_EXP.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_BODY
+                                    EXP = LV_EXP
+                                    MSG = 'body' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-TEXT_INFO-PARTS
+                                    EXP = 1
+                                    MSG = 'one part' ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-JOBID EXP = `88` ).
+
   ENDMETHOD.
 
+  METHOD OTP_RULES.
 
-  METHOD otp_rules.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lv_text TYPE string.
-    DATA lv_s TYPE string.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+
+    DATA: LV_TEXT TYPE STRING,
+          LV_S    TYPE STRING.
 
     " Two numbers
-    APPEND `0500 111 22 44` TO mt_numbers.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Kod 1`
-                                  iv_header  = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_number
-                                    msg = 'one number only' ).
-    DELETE mt_numbers INDEX 2.
+    APPEND `0500 111 22 44` TO MT_NUMBERS.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Kod 1`
+                                  IV_HEADER  = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_NUMBER
+                                    MSG = 'one number only' ).
+    DELETE MT_NUMBERS INDEX 2.
 
     " s with cedilla: refused, or turned into s
-    lv_s = ltu_chars=>char( 351 ).
-    CONCATENATE `Kod ` lv_s `ifre` INTO lv_text.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = lv_text
-                                  iv_header  = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_text
-                                    msg = 'Turkish letter' ).
-    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = lv_text
-                                  iv_header  = `FIRMA`
-                                  iv_ascii   = abap_true ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-dry_run
-                                    msg = 'ASCII preview accepted' ).
+    LV_S = LTU_CHARS=>CHAR( 351 ).
+    CONCATENATE `Kod ` LV_S `ifre` INTO LV_TEXT.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = LV_TEXT
+                                  IV_HEADER  = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_TEXT
+                                    MSG = 'Turkish letter' ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = LV_TEXT
+                                  IV_HEADER  = `FIRMA`
+                                  IV_ASCII   = ABAP_TRUE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-DRY_RUN
+                                    MSG = 'ASCII preview accepted' ).
 
     " 155 characters fit with a sender name with letters, 156 not
-    lv_text = ltu_chars=>repeat( iv_text = `a` iv_times = 155 ).
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = lv_text
-                                  iv_header  = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-dry_run
-                                    msg = '155 fit' ).
-    CONCATENATE lv_text `a` INTO lv_text.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = lv_text
-                                  iv_header  = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_text
-                                    msg = '156 do not' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls
-                                    exp = 0
-                                    msg = 'no HTTP call' ).
+    LV_TEXT = LTU_CHARS=>REPEAT( IV_TEXT = `a` IV_TIMES = 155 ).
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = LV_TEXT
+                                  IV_HEADER  = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-DRY_RUN
+                                    MSG = '155 fit' ).
+    CONCATENATE LV_TEXT `a` INTO LV_TEXT.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = LV_TEXT
+                                  IV_HEADER  = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_TEXT
+                                    MSG = '156 do not' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS
+                                    EXP = 0
+                                    MSG = 'no HTTP call' ).
+
   ENDMETHOD.
 
+  METHOD OTP_OUTPUT_IS_PRIVATE.
 
-  METHOD otp_output_is_private.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    DATA ls_result TYPE lif_sms=>ty_result.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Passcode 482951`
+                                  IV_HEADER  = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-DRY_RUN ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-REQUEST ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->CALLS EXP = 0 ).
 
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Passcode 482951`
-                                  iv_header  = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-dry_run ).
-    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
-    cl_aunit_assert=>assert_initial( act = ls_result-request ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->calls exp = 0 ).
+    MO_BACKEND->STATUS = 503.
+    MO_BACKEND->REPLY = `Error processing Passcode 482951`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Passcode 482951`
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-HTTP ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-TEXT_INFO-TEXT ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-REQUEST ).
+    IF LS_RESULT-MESSAGE CS '482951'.
 
-    mo_backend->status = 503.
-    mo_backend->reply = `Error processing Passcode 482951`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Passcode 482951`
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-http ).
-    cl_aunit_assert=>assert_initial( act = ls_result-text_info-text ).
-    cl_aunit_assert=>assert_initial( act = ls_result-request ).
-    IF ls_result-message CS '482951'.
-      cl_aunit_assert=>fail( msg = 'OTP exposed in the HTTP error' ).
+      CL_AUNIT_ASSERT=>FAIL( MSG = 'OTP exposed in the HTTP error' ).
+
     ENDIF.
 
-    mo_backend->status = 200.
-    mo_backend->reply = `{"code":"99","description":"482951"}`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Passcode 482951`
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code exp = `99` ).
-    cl_aunit_assert=>assert_initial( act = ls_result-description ).
-    IF ls_result-message CS '482951'.
-      cl_aunit_assert=>fail( msg = 'OTP in the provider error' ).
+    MO_BACKEND->STATUS = 200.
+    MO_BACKEND->REPLY = `{"code":"99","description":"482951"}`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Passcode 482951`
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE EXP = `99` ).
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_RESULT-DESCRIPTION ).
+    IF LS_RESULT-MESSAGE CS '482951'.
+
+      CL_AUNIT_ASSERT=>FAIL( MSG = 'OTP in the provider error' ).
+
     ENDIF.
 
   ENDMETHOD.
 
+  METHOD OTP_CODES.
 
-  METHOD otp_codes.
-    DATA ls_result TYPE lif_sms=>ty_result.
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
 
-    mo_backend->reply = `{"code":"60","description":"no package"}`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Kod 1`
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    assert_text( iv_act = ls_result-message iv_key = `OTP_60` ).
-    mo_backend->reply = `{"code":"41"}`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Kod 1`
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    assert_text( iv_act = ls_result-message iv_key = `C40` ).
-    mo_backend->reply = `{"code":"105"}`.
-    ls_result = mo_cut->send_otp( it_numbers = mt_numbers
-                                  iv_text    = `Kod 1`
-                                  iv_header  = `FIRMA`
-                                  iv_dry_run = abap_false ).
-    assert_text( iv_act = ls_result-message
-                 iv_key = `C100`
-                 iv_1   = `105` ).
+    MO_BACKEND->REPLY = `{"code":"60","description":"no package"}`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Kod 1`
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    ASSERT_TEXT( IV_ACT = LS_RESULT-MESSAGE IV_KEY = `OTP_60` ).
+    MO_BACKEND->REPLY = `{"code":"41"}`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Kod 1`
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    ASSERT_TEXT( IV_ACT = LS_RESULT-MESSAGE IV_KEY = `C40` ).
+    MO_BACKEND->REPLY = `{"code":"105"}`.
+    LS_RESULT = MO_CUT->SEND_OTP( IT_NUMBERS = MT_NUMBERS
+                                  IV_TEXT    = `Kod 1`
+                                  IV_HEADER  = `FIRMA`
+                                  IV_DRY_RUN = ABAP_FALSE ).
+    ASSERT_TEXT( IV_ACT = LS_RESULT-MESSAGE
+                 IV_KEY = `C100`
+                 IV_1   = `105` ).
+
   ENDMETHOD.
 
+  METHOD TEMPLATE_REQUEST.
 
-  METHOD template_request.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA ls_schedule TYPE lif_sms=>ty_schedule.
-    DATA lt_params TYPE lif_sms=>ty_params.
-    DATA ls_param TYPE lif_sms=>ty_param.
+    DATA LT_PARAMS TYPE LIF_SMS=>TY_PARAMS.
 
-    ls_param-name = `ad`.
-    ls_param-value = `Ali`.
-    APPEND ls_param TO lt_params.
-    ls_param-name = `talepno`.
-    ls_param-value = `123`.
-    APPEND ls_param TO lt_params.
-    ls_schedule-start_date = '20261108'.
-    ls_schedule-start_time = '093000'.
-    mo_backend->reply = `{"code":"00","jobid":"99"}`.
-    ls_result = mo_cut->send_template( it_numbers     = mt_numbers
-                                       iv_template_id = 97
-                                       it_params      = lt_params
-                                       iv_header      = `FIRMA`
-                                       is_schedule    = ls_schedule
-                                       iv_dry_run     = abap_false ).
-    cl_aunit_assert=>assert_equals( act = ls_result-jobid
-                                    exp = `99`
-                                    msg = 'job ID' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_destination
-                                    exp = 'ZCHE_TEST_EXT'
-                                    msg = 'second destination' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/template/send`
-                                    msg = 'path' ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"encoding":"TR"` ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"startdate":"2026-11-08 09:30"` ).
-    assert_contains(
-      iv_text = mo_backend->last_body
-      iv_part = `{"templateId":97,"number":"5001112233","params":` ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `{"ad":"Ali","talepno":"123"}}]}` ).
+    DATA: LS_RESULT   TYPE LIF_SMS=>TY_RESULT,
+          LS_SCHEDULE TYPE LIF_SMS=>TY_SCHEDULE,
+          LS_PARAM    TYPE LIF_SMS=>TY_PARAM.
+
+    LS_PARAM-NAME = `ad`.
+    LS_PARAM-VALUE = `Ali`.
+    APPEND LS_PARAM TO LT_PARAMS.
+    LS_PARAM-NAME = `talepno`.
+    LS_PARAM-VALUE = `123`.
+    APPEND LS_PARAM TO LT_PARAMS.
+    LS_SCHEDULE-START_DATE = '20261108'.
+    LS_SCHEDULE-START_TIME = '093000'.
+    MO_BACKEND->REPLY = `{"code":"00","jobid":"99"}`.
+    LS_RESULT = MO_CUT->SEND_TEMPLATE( IT_NUMBERS     = MT_NUMBERS
+                                       IV_TEMPLATE_ID = 97
+                                       IT_PARAMS      = LT_PARAMS
+                                       IV_HEADER      = `FIRMA`
+                                       IS_SCHEDULE    = LS_SCHEDULE
+                                       IV_DRY_RUN     = ABAP_FALSE ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-JOBID
+                                    EXP = `99`
+                                    MSG = 'job ID' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_DESTINATION
+                                    EXP = 'ZCHE_TEST_EXT'
+                                    MSG = 'second destination' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/template/send`
+                                    MSG = 'path' ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"encoding":"TR"` ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"startdate":"2026-11-08 09:30"` ).
+    ASSERT_CONTAINS(
+      IV_TEXT = MO_BACKEND->LAST_BODY
+      IV_PART = `{"templateId":97,"number":"5001112233","params":` ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `{"ad":"Ali","talepno":"123"}}]}` ).
+
   ENDMETHOD.
 
+  METHOD TEMPLATE_CHECKS.
 
-  METHOD template_checks.
-    DATA ls_result TYPE lif_sms=>ty_result.
-    DATA lt_params TYPE lif_sms=>ty_params.
+    DATA LT_PARAMS TYPE LIF_SMS=>TY_PARAMS.
 
-    ls_result = mo_cut->send_template( it_numbers     = mt_numbers
-                                       iv_template_id = 0
-                                       it_params      = lt_params
-                                       iv_header      = `FIRMA` ).
-    cl_aunit_assert=>assert_equals( act = ls_result-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'no template ID' ).
-    mo_backend->reply = `{"code":"NOT_FOUND","description":"x"}`.
-    ls_result = mo_cut->send_template( it_numbers     = mt_numbers
-                                       iv_template_id = 5
-                                       it_params      = lt_params
-                                       iv_header      = `FIRMA`
-                                       iv_dry_run     = abap_false ).
-    assert_text( iv_act = ls_result-message
-                 iv_key = `TPL_NOT_FOUND` ).
+    DATA LS_RESULT TYPE LIF_SMS=>TY_RESULT.
+
+    LS_RESULT = MO_CUT->SEND_TEMPLATE( IT_NUMBERS     = MT_NUMBERS
+                                       IV_TEMPLATE_ID = 0
+                                       IT_PARAMS      = LT_PARAMS
+                                       IV_HEADER      = `FIRMA` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_RESULT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'no template ID' ).
+    MO_BACKEND->REPLY = `{"code":"NOT_FOUND","description":"x"}`.
+    LS_RESULT = MO_CUT->SEND_TEMPLATE( IT_NUMBERS     = MT_NUMBERS
+                                       IV_TEMPLATE_ID = 5
+                                       IT_PARAMS      = LT_PARAMS
+                                       IV_HEADER      = `FIRMA`
+                                       IV_DRY_RUN     = ABAP_FALSE ).
+    ASSERT_TEXT( IV_ACT = LS_RESULT-MESSAGE
+                 IV_KEY = `TPL_NOT_FOUND` ).
+
   ENDMETHOD.
 
+  METHOD TEMPLATE_VALUES.
 
-  METHOD template_values.
-    DATA lt_lines TYPE string_table.
-    DATA lt_params TYPE lif_sms=>ty_params.
-    DATA ls_param TYPE lif_sms=>ty_param.
+    DATA: LT_LINES  TYPE STRING_TABLE,
+          LT_PARAMS TYPE LIF_SMS=>TY_PARAMS.
 
-    APPEND `ad=Ali` TO lt_lines.
-    APPEND `url=a=b` TO lt_lines.
-    APPEND `no equal sign` TO lt_lines.
-    lt_params = lcl_app=>params_of( lt_lines ).
-    READ TABLE lt_params INTO ls_param INDEX 2.
-    cl_aunit_assert=>assert_equals( act = ls_param-value
-                                    exp = `a=b`
-                                    msg = 'first = splits' ).
-    READ TABLE lt_params INTO ls_param INDEX 3.
-    cl_aunit_assert=>assert_initial( act = ls_param-name
-                                     msg = 'no name' ).
+    DATA LS_PARAM TYPE LIF_SMS=>TY_PARAM.
+
+    APPEND `ad=Ali` TO LT_LINES.
+    APPEND `url=a=b` TO LT_LINES.
+    APPEND `no equal sign` TO LT_LINES.
+    LT_PARAMS = LCL_APP=>PARAMS_OF( LT_LINES ).
+    CLEAR LS_PARAM.
+    READ TABLE LT_PARAMS
+         INTO LS_PARAM
+         INDEX 2.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_PARAM-VALUE
+                                    EXP = `a=b`
+                                    MSG = 'first = splits' ).
+    CLEAR LS_PARAM.
+    READ TABLE LT_PARAMS
+         INTO LS_PARAM
+         INDEX 3.
+    CL_AUNIT_ASSERT=>ASSERT_INITIAL( ACT = LS_PARAM-NAME
+                                     MSG = 'no name' ).
+
   ENDMETHOD.
 
+  METHOD CANCEL_JOB.
 
-  METHOD cancel_job.
-    DATA ls_answer TYPE lif_sms=>ty_answer.
+    DATA LS_ANSWER TYPE LIF_SMS=>TY_ANSWER.
 
-    mo_backend->reply =
+    MO_BACKEND->REPLY =
       `{"code":"00","jobid":"123","description":"job canceled"}`.
-    ls_answer = mo_cut->cancel( ` 123 ` ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_body
-                                    exp = `{"jobid":"123"}`
-                                    msg = 'body' ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/cancel`
-                                    msg = 'path' ).
-    assert_text( iv_act = ls_answer-message iv_key = `CANCEL_00` ).
-    mo_backend->reply = `{"code":"60","jobid":"123"}`.
-    ls_answer = mo_cut->cancel( `123` ).
-    assert_text( iv_act = ls_answer-message iv_key = `CANCEL_60` ).
+    LS_ANSWER = MO_CUT->CANCEL( ` 123 ` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_BODY
+                                    EXP = `{"jobid":"123"}`
+                                    MSG = 'body' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/cancel`
+                                    MSG = 'path' ).
+    ASSERT_TEXT( IV_ACT = LS_ANSWER-MESSAGE IV_KEY = `CANCEL_00` ).
+    MO_BACKEND->REPLY = `{"code":"60","jobid":"123"}`.
+    LS_ANSWER = MO_CUT->CANCEL( `123` ).
+    ASSERT_TEXT( IV_ACT = LS_ANSWER-MESSAGE IV_KEY = `CANCEL_60` ).
+
   ENDMETHOD.
 
+  METHOD REPORT_BY_DATES.
 
-  METHOD report_by_dates.
-    DATA ls_report TYPE lif_sms=>ty_report.
-    DATA lv_exp TYPE string.
+    DATA LS_REPORT TYPE LIF_SMS=>TY_REPORT.
 
-    mo_backend->reply = `{"code":"60","jobs":null}`.
-    ls_report = mo_cut->report( iv_from = '20261101'
-                                iv_to   = '20261107' ).
+    DATA LV_EXP TYPE STRING.
+
+    MO_BACKEND->REPLY = `{"code":"60","jobs":null}`.
+    LS_REPORT = MO_CUT->REPORT( IV_FROM = '20261101'
+                                IV_TO   = '20261107' ).
     CONCATENATE `{"startdate":"01.11.2026 00:00:00",`
-                `"stopdate":"07.11.2026 23:59:59"}` INTO lv_exp.
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_body
-                                    exp = lv_exp
-                                    msg = 'body' ).
-    assert_text( iv_act = ls_report-message iv_key = `REPORT_60` ).
-    ls_report = mo_cut->report( iv_from = '20260101'
-                                iv_to   = '20261107' ).
-    cl_aunit_assert=>assert_equals( act = ls_report-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'more than 3 months' ).
-    ls_report = mo_cut->report( iv_from = '20261101' ).
-    cl_aunit_assert=>assert_equals( act = ls_report-code
-                                    exp = lif_sms=>code-bad_input
-                                    msg = 'one date only' ).
+                `"stopdate":"07.11.2026 23:59:59"}`
+      INTO LV_EXP.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_BODY
+                                    EXP = LV_EXP
+                                    MSG = 'body' ).
+    ASSERT_TEXT( IV_ACT = LS_REPORT-MESSAGE IV_KEY = `REPORT_60` ).
+    LS_REPORT = MO_CUT->REPORT( IV_FROM = '20260101'
+                                IV_TO   = '20261107' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_REPORT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'more than 3 months' ).
+    LS_REPORT = MO_CUT->REPORT( IV_FROM = '20261101' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_REPORT-CODE
+                                    EXP = LIF_SMS=>CODE-BAD_INPUT
+                                    MSG = 'one date only' ).
+
   ENDMETHOD.
 
+  METHOD STATISTICS.
 
-  METHOD statistics.
-    DATA ls_stats TYPE lif_sms=>ty_stats.
-    DATA ls_line TYPE lif_sms=>ty_stats_line.
-    DATA lv_count TYPE i.
+    DATA: LS_STATS TYPE LIF_SMS=>TY_STATS,
+          LS_LINE  TYPE LIF_SMS=>TY_STATS_LINE.
+
+    DATA LV_COUNT TYPE I.
 
     CONCATENATE
       `{"stats":[{"status":"repeated","totalMessageLength":0,`
@@ -7097,65 +8813,76 @@ CLASS ltc_services IMPLEMENTATION.
       `"totalMessageLength":3,"totalSms":3,"chargeStatement":`
       `"3.0 unit(s) from: ","statement":"charged","domestic":true}],`
       `"description":"success"}`
-      INTO mo_backend->reply.
-    ls_stats = mo_cut->stats( iv_jobid     = `123`
-                              iv_send_date = '20261001' ).
-    cl_aunit_assert=>assert_equals( act = ls_stats-code
-                                    exp = `00`
-                                    msg = 'success without code' ).
-    assert_contains( iv_text = mo_backend->last_body
-                     iv_part = `"senddate":"2026-10-01 00:00:00"` ).
-    DESCRIBE TABLE ls_stats-lines LINES lv_count.
-    cl_aunit_assert=>assert_equals( act = lv_count
-                                    exp = 2
-                                    msg = 'two lines' ).
-    READ TABLE ls_stats-lines INTO ls_line INDEX 2.
-    assert_text( iv_act = ls_line-status_text
-                 iv_key = `ST_successful` ).
-    cl_aunit_assert=>assert_equals( act = ls_line-total_parts
-                                    exp = `3`
-                                    msg = 'parts' ).
+      INTO MO_BACKEND->REPLY.
+    LS_STATS = MO_CUT->STATS( IV_JOBID     = `123`
+                              IV_SEND_DATE = '20261001' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_STATS-CODE
+                                    EXP = `00`
+                                    MSG = 'success without code' ).
+    ASSERT_CONTAINS( IV_TEXT = MO_BACKEND->LAST_BODY
+                     IV_PART = `"senddate":"2026-10-01 00:00:00"` ).
+    DESCRIBE TABLE LS_STATS-LINES LINES LV_COUNT.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_COUNT
+                                    EXP = 2
+                                    MSG = 'two lines' ).
+    CLEAR LS_LINE.
+    READ TABLE LS_STATS-LINES
+         INTO LS_LINE
+         INDEX 2.
+    ASSERT_TEXT( IV_ACT = LS_LINE-STATUS_TEXT
+                 IV_KEY = `ST_successful` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-TOTAL_PARTS
+                                    EXP = `3`
+                                    MSG = 'parts' ).
+
   ENDMETHOD.
 
+  METHOD INBOX_MESSAGES.
 
-  METHOD inbox_messages.
-    DATA ls_inbox TYPE lif_sms=>ty_inbox.
-    DATA lv_exp TYPE string.
-    DATA ls_line TYPE lif_sms=>ty_inbox_line.
+    DATA: LS_INBOX TYPE LIF_SMS=>TY_INBOX,
+          LS_LINE  TYPE LIF_SMS=>TY_INBOX_LINE.
+
+    DATA LV_EXP TYPE STRING.
 
     CONCATENATE
       `{"code":"00","messages":[{"id":121386491,"gorevId":"1202",`
       `"kayittar":"1770000000000","mesaj":"Tamam","operator":`
       `"Netgsm","gonderen":"5001112233"}],"description":"success"}`
-      INTO mo_backend->reply.
-    ls_inbox = mo_cut->inbox( iv_from = '20261101'
-                              iv_to   = '20261107' ).
+      INTO MO_BACKEND->REPLY.
+    LS_INBOX = MO_CUT->INBOX( IV_FROM = '20261101'
+                              IV_TO   = '20261107' ).
     CONCATENATE `/sms/rest/v2/inbox?startdate=011120260000`
-                `&stopdate=071120262359` INTO lv_exp.
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = lv_exp
-                                    msg = 'path' ).
-    READ TABLE ls_inbox-lines INTO ls_line INDEX 1.
-    cl_aunit_assert=>assert_equals( act = ls_line-received
-                                    exp = `02.02.2026 05:40:00`
-                                    msg = 'Turkish time' ).
-    cl_aunit_assert=>assert_equals( act = ls_line-sender
-                                    exp = `********33`
-                                    msg = 'masked' ).
-    cl_aunit_assert=>assert_equals( act = ls_line-text
-                                    exp = `Tamam`
-                                    msg = 'text' ).
-    ls_inbox = mo_cut->inbox( ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = `/sms/rest/v2/inbox`
-                                    msg = 'only new ones' ).
+                `&stopdate=071120262359`
+      INTO LV_EXP.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = LV_EXP
+                                    MSG = 'path' ).
+    CLEAR LS_LINE.
+    READ TABLE LS_INBOX-LINES
+         INTO LS_LINE
+         INDEX 1.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-RECEIVED
+                                    EXP = `02.02.2026 05:40:00`
+                                    MSG = 'Turkish time' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-SENDER
+                                    EXP = `********33`
+                                    MSG = 'masked' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-TEXT
+                                    EXP = `Tamam`
+                                    MSG = 'text' ).
+    LS_INBOX = MO_CUT->INBOX( ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = `/sms/rest/v2/inbox`
+                                    MSG = 'only new ones' ).
+
   ENDMETHOD.
 
+  METHOD TEMPLATE_LIST.
 
-  METHOD template_list.
-    DATA ls_templates TYPE lif_sms=>ty_templates.
-    DATA lv_exp TYPE string.
-    DATA ls_line TYPE lif_sms=>ty_template.
+    DATA: LS_TEMPLATES TYPE LIF_SMS=>TY_TEMPLATES,
+          LS_LINE      TYPE LIF_SMS=>TY_TEMPLATE.
+
+    DATA LV_EXP TYPE STRING.
 
     CONCATENATE
       `{"code":"00","description":"success","templates":[{`
@@ -7166,74 +8893,82 @@ CLASS ltc_services IMPLEMENTATION.
       `{"id":83,"name":"talepno","type":"BIGINT","maxLength":null}`
       `],"public":false}],"page":0,"size":1,"totalElements":2,`
       `"totalPages":2}`
-      INTO mo_backend->reply.
-    ls_templates = mo_cut->templates( iv_search = `destek talebi` ).
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_destination
-                                    exp = 'ZCHE_TEST_EXT'
-                                    msg = 'second destination' ).
+      INTO MO_BACKEND->REPLY.
+    LS_TEMPLATES = MO_CUT->TEMPLATES( IV_SEARCH = `destek talebi` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_DESTINATION
+                                    EXP = 'ZCHE_TEST_EXT'
+                                    MSG = 'second destination' ).
     CONCATENATE `/sms/rest/v2/template/list?page=0&size=50`
                 `&includePublic=true&search=destek%20talebi`
-                INTO lv_exp.
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_path
-                                    exp = lv_exp
-                                    msg = 'path' ).
-    READ TABLE ls_templates-lines INTO ls_line INDEX 1.
-    cl_aunit_assert=>assert_equals( act = ls_line-id
-                                    exp = `97`
-                                    msg = 'ID' ).
-    cl_aunit_assert=>assert_equals(
-      act = ls_line-parameters
-      exp = `ad (TEXT, 50); talepno (BIGINT)`
-      msg = 'parameters' ).
-    cl_aunit_assert=>assert_equals( act = ls_templates-total
-                                    exp = `2`
-                                    msg = 'total' ).
+      INTO LV_EXP.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_PATH
+                                    EXP = LV_EXP
+                                    MSG = 'path' ).
+    CLEAR LS_LINE.
+    READ TABLE LS_TEMPLATES-LINES
+         INTO LS_LINE
+         INDEX 1.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LINE-ID
+                                    EXP = `97`
+                                    MSG = 'ID' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS(
+      ACT = LS_LINE-PARAMETERS
+      EXP = `ad (TEXT, 50); talepno (BIGINT)`
+      MSG = 'parameters' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_TEMPLATES-TOTAL
+                                    EXP = `2`
+                                    MSG = 'total' ).
+
   ENDMETHOD.
 
+  METHOD NETGSM_LENGTH.
 
-  METHOD netgsm_length.
-    DATA ls_length TYPE lif_sms=>ty_length.
-    DATA lv_exp TYPE string.
+    DATA LS_LENGTH TYPE LIF_SMS=>TY_LENGTH.
+
+    DATA LV_EXP TYPE STRING.
 
     CONCATENATE `{"parts":1,"charsUsed":29,"charsLeft":888,`
                 `"charsLeftUntilNextPart":131}`
-                INTO mo_backend->reply.
-    ls_length = mo_cut->length( iv_text   = `Merhaba, sifreniz 123456`
-                                iv_header = `FIRMA` ).
+      INTO MO_BACKEND->REPLY.
+    LS_LENGTH = MO_CUT->LENGTH( IV_TEXT   = `Merhaba, sifreniz 123456`
+                                IV_HEADER = `FIRMA` ).
     CONCATENATE `{"context":"Merhaba, sifreniz 123456","encoding":0,`
-                `"customHeader":true}` INTO lv_exp.
-    cl_aunit_assert=>assert_equals( act = mo_backend->last_body
-                                    exp = lv_exp
-                                    msg = 'body' ).
-    cl_aunit_assert=>assert_equals( act = ls_length-code
-                                    exp = `00`
-                                    msg = 'no code means OK' ).
-    cl_aunit_assert=>assert_equals( act = ls_length-used
-                                    exp = `29`
-                                    msg = 'used' ).
+                `"customHeader":true}`
+      INTO LV_EXP.
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = MO_BACKEND->LAST_BODY
+                                    EXP = LV_EXP
+                                    MSG = 'body' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LENGTH-CODE
+                                    EXP = `00`
+                                    MSG = 'no code means OK' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LS_LENGTH-USED
+                                    EXP = `29`
+                                    MSG = 'used' ).
+
   ENDMETHOD.
 
+  METHOD HELPERS.
 
-  METHOD helpers.
-    DATA lv_text TYPE string.
-    DATA lv_c TYPE string.
+    DATA: LV_TEXT TYPE STRING,
+          LV_C    TYPE STRING.
 
-    lv_c = ltu_chars=>char( 231 ).
-    CONCATENATE `a b/` lv_c INTO lv_text.
-    lv_text = lcl_sms_netgsm=>url_encode( lv_text ).
-    cl_aunit_assert=>assert_equals( act = lv_text
-                                    exp = `a%20b%2F%C3%A7`
-                                    msg = 'URL encoding' ).
-    lv_text = lcl_sms_netgsm=>turkish_time( `abc` ).
-    cl_aunit_assert=>assert_equals( act = lv_text
-                                    exp = `abc`
-                                    msg = 'not a number' ).
-    lv_text = lcl_sms_netgsm=>format_time( iv_date  = '20260411'
-                                           iv_time  = '010000'
-                                           iv_style = 'DMYHM' ).
-    cl_aunit_assert=>assert_equals( act = lv_text
-                                    exp = `110420260100`
-                                    msg = 'Netgsm example' ).
+    LV_C = LTU_CHARS=>CHAR( 231 ).
+    CONCATENATE `a b/` LV_C INTO LV_TEXT.
+    LV_TEXT = LCL_SMS_NETGSM=>URL_ENCODE( LV_TEXT ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_TEXT
+                                    EXP = `a%20b%2F%C3%A7`
+                                    MSG = 'URL encoding' ).
+    LV_TEXT = LCL_SMS_NETGSM=>TURKISH_TIME( `abc` ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_TEXT
+                                    EXP = `abc`
+                                    MSG = 'not a number' ).
+    LV_TEXT = LCL_SMS_NETGSM=>FORMAT_TIME( IV_DATE  = '20260411'
+                                           IV_TIME  = '010000'
+                                           IV_STYLE = 'DMYHM' ).
+    CL_AUNIT_ASSERT=>ASSERT_EQUALS( ACT = LV_TEXT
+                                    EXP = `110420260100`
+                                    MSG = 'Netgsm example' ).
+
   ENDMETHOD.
 
 ENDCLASS.
